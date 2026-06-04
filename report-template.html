@@ -1,0 +1,456 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>市场容量分析 - {{KEYWORD}}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Microsoft YaHei', sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; color: #333; }
+    h1 { color: #1890ff; margin-bottom: 16px; }
+    h2 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 8px; margin-bottom: 16px; font-size: 18px; }
+    .info { background: #e6f7ff; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #0050b3; line-height: 1.8; }
+    .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+    .metric { text-align: center; }
+    .metric .value { font-size: 28px; font-weight: bold; color: #1890ff; }
+    .metric .label { color: #666; margin-top: 4px; font-size: 13px; }
+    .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .chart-container { position: relative; height: 350px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 12px; border: 1px solid #e8e8e8; text-align: left; }
+    th { background: #fafafa; font-weight: 600; position: sticky; top: 0; }
+    tr:nth-child(even) { background: #fafafa; }
+    .conclusion { font-size: 20px; font-weight: bold; padding: 16px; border-radius: 8px; text-align: center; margin-top: 16px; }
+    .pass { background: #f6ffed; color: #52c41a; border: 2px solid #b7eb8f; }
+    .caution { background: #fffbe6; color: #faad14; border: 2px solid #ffe58f; }
+    .fail { background: #fff2f0; color: #ff4d4f; border: 2px solid #ffccc7; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .metric-card { background: #f0f5ff; border-radius: 8px; padding: 16px; text-align: center; border: 1px solid #d6e4ff; }
+    .metric-card .num { font-size: 24px; font-weight: bold; color: #1890ff; }
+    .metric-card .desc { font-size: 12px; color: #666; margin-top: 4px; }
+    .metric-card.warn { background: #fffbe6; border: #ffe58f; }
+    .metric-card.warn .num { color: #faad14; }
+    .metric-card.ok { background: #f6ffed; border: #b7eb8f; }
+    .metric-card.ok .num { color: #52c41a; }
+    .barriers-list { list-style: none; padding: 0; }
+    .barriers-list li { padding: 8px 12px; margin: 4px 0; background: #f9f9f9; border-radius: 6px; font-size: 13px; border-left: 3px solid #1890ff; }
+    .scroll-table { max-height: 600px; overflow-y: auto; }
+    a { color: #1890ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<h1>📊 市场容量分析：{{KEYWORD}}</h1>
+
+<div class="info">
+  数据来源：鸥鹭（Oalur）| 查询时间：{{DATE}} | 大类BSR：1-{{MAX_BSR}}<br>
+  目标类目：{{TARGET_CATEGORY}}<br>
+  过滤前：{{ALL_COUNT}} 条 → 过滤后：{{FILTERED_COUNT}} 条（排除 {{EXCLUDED_COUNT}} 条无关品类）<br>
+  数据时间范围：{{TIME_RANGE}}
+</div>
+
+<!-- 分析结论总览 -->
+<div class="card" style="background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%); border: 1px solid #bae0ff;">
+  <h2 style="border:none;padding-left:0;">📋 分析结论总览</h2>
+  <div class="summary">
+    <div class="metric">
+      <div class="value" style="font-size:18px; color: {{CAPACITY_SUMMARY_COLOR}}">{{CAPACITY_SUMMARY}}</div>
+      <div class="label">🏪 市场容量</div>
+    </div>
+    <div class="metric">
+      <div class="value" style="font-size:18px; color: {{COMP_SUMMARY_COLOR}}">{{COMP_SUMMARY}}</div>
+      <div class="label">⚔️ 竞争格局</div>
+    </div>
+    <div class="metric">
+      <div class="value" style="font-size:18px;">{{SEASONALITY_SUMMARY}}</div>
+      <div class="label">🌀 季节性</div>
+    </div>
+    <div class="metric"><div class="value">{{FILTERED_COUNT}}</div><div class="label">过滤后产品</div></div>
+    <div class="metric"><div class="value">{{NEW_PCT}}%</div><div class="label">新品占比</div></div>
+    <div class="metric">
+      <div class="value" style="font-size:16px;color:{{SURVIVAL_SUMMARY_COLOR}}">{{SURVIVAL_SUMMARY}}</div>
+      <div class="label">新品存活</div>
+    </div>
+    <div class="metric">
+      <div class="value" style="font-size:16px;color:{{NEW_SALES_SUMMARY_COLOR}}">{{NEW_SALES_SUMMARY}}</div>
+      <div class="label">新品销量</div>
+    </div>
+  </div>
+</div>
+
+<!-- 核心指标 -->
+<div class="card">
+  <div class="summary">
+    <div class="metric"><div class="value">{{RAW_TOTAL}}</div><div class="label">Oalur 总数（合并前）</div></div>
+    <div class="metric"><div class="value">{{TOTAL}}</div><div class="label">合并去重后</div></div>
+    <div class="metric"><div class="value">{{FILTERED_COUNT}}</div><div class="label">过滤后产品</div></div>
+    <div class="metric"><div class="value">{{NEW_PCT}}%</div><div class="label">新品占比（&lt;6月）</div></div>
+    <div class="metric"><div class="value">{{AVG_PRICE}}</div><div class="label">平均价格</div></div>
+  </div>
+</div>
+
+<!-- 销量统计 -->
+<div class="card">
+  <h2>📈 销量统计</h2>
+  <div class="summary">
+    <div class="metric"><div class="value">{{SALES_MEDIAN}}</div><div class="label">📦 月销量中位数</div></div>
+    <div class="metric"><div class="value">{{SALES_AVG}}</div><div class="label">📦 月销量平均值</div></div>
+    <div class="metric"><div class="value">{{SALES_MAX}}</div><div class="label">📦 月销量最高</div></div>
+    <div class="metric"><div class="value">{{SALES_MIN}}</div><div class="label">📦 月销量最低</div></div>
+    <div class="metric"><div class="value">{{TOTAL_SALES}}</div><div class="label">📦 月销量总计</div></div>
+  </div>
+  <div class="summary" style="margin-top:12px;">
+    <div class="metric"><div class="value">{{REV_MEDIAN}}</div><div class="label">💰 月销售额中位数</div></div>
+    <div class="metric"><div class="value">{{REV_AVG}}</div><div class="label">💰 月销售额平均值</div></div>
+    <div class="metric"><div class="value">{{REV_MAX}}</div><div class="label">💰 月销售额最高</div></div>
+    <div class="metric"><div class="value">{{REV_MIN}}</div><div class="label">💰 月销售额最低</div></div>
+    <div class="metric"><div class="value">{{TOTAL_REVENUE}}</div><div class="label">💰 月销售额总计</div></div>
+  </div>
+</div>
+
+{{PROFIT_BLOCK}}
+
+<!-- BSR 分布 -->
+<div class="card">
+  <h2>📈 BSR 区间分布</h2>
+  <div class="chart-container"><canvas id="bsrChart"></canvas></div>
+  {{BSR_INSIGHT}}
+</div>
+
+<!-- 上架时间 + 价格 -->
+<div class="chart-row">
+  <div class="card">
+    <h2>📅 上架时间分布</h2>
+    <div class="chart-container"><canvas id="ageChart"></canvas></div>
+    {{AGE_INSIGHT}}
+  </div>
+  <div class="card">
+    <h2>💰 价格分布</h2>
+    <div class="chart-container"><canvas id="priceChart"></canvas></div>
+    {{PRICE_INSIGHT}}
+  </div>
+</div>
+
+<!-- 5步法判断 -->
+<div class="card">
+  <h2>🔍 市场容量判断（5步法）</h2>
+  <ol>
+    <li><strong>产品数量</strong>：过滤后 {{FILTERED_COUNT}} 个产品 {{STEP1}}</li>
+    <li><strong>头部集中度</strong>：前10名 BSR 范围 {{TOP10_BSR}}</li>
+    <li><strong>断层判断</strong>：{{GAP_TEXT}} {{STEP3}}</li>
+    <li><strong>新品机会</strong>：近6个月新品 {{NEW_COUNT}} 个（{{NEW_PCT}}%）{{STEP4}}</li>
+    <li><strong>最终结论</strong>：{{CONCLUSION}}</li>
+  </ol>
+  <div class="conclusion {{CONCLUSION_CLASS}}">{{CONCLUSION}}<br><small>{{REASON}}</small></div>
+</div>
+
+<!-- ==================== 市场竞争分析 ==================== -->
+<h1 style="margin-top:32px;">⚔️ 市场竞争分析</h1>
+
+<!-- 竞争核心指标 -->
+<div class="card">
+  <div class="metric-grid">
+    <div class="metric-card {{TOP1_ITEM_CLASS}}">
+      <div class="num">{{TOP1_ITEM_SHARE}}%</div>
+      <div class="desc">TOP1 单品占比（&lt;30%）</div>
+    </div>
+    <div class="metric-card {{TOP3_ITEM_CLASS}}">
+      <div class="num">{{TOP3_ITEM_SHARE}}%</div>
+      <div class="desc">TOP3 单品合计（&lt;45%）</div>
+    </div>
+    <div class="metric-card {{TOP3_BRAND_CLASS}}">
+      <div class="num">{{TOP3_BRAND_SHARE}}%</div>
+      <div class="desc">TOP3 品牌份额（&lt;45%）</div>
+    </div>
+    <div class="metric-card {{BRAND_DISP_CLASS}}">
+      <div class="num">{{BRAND_DISPERSION}}%</div>
+      <div class="desc">品牌分散度（&gt;40%）</div>
+    </div>
+    <div class="metric-card">
+      <div class="num">{{TOP20_AVG_REVIEWS}}</div>
+      <div class="desc">前20名平均评论</div>
+    </div>
+    <div class="metric-card">
+      <div class="num">{{REVIEW_MEDIAN}}</div>
+      <div class="desc">评论中位数</div>
+    </div>
+  </div>
+  <div style="margin-top:8px;padding:8px 12px;background:#f9f9f9;border-radius:6px;font-size:12px;color:#666;">
+    前20名中评论 &lt; 100 条的: <strong>{{TOP20_LOW_REVIEW_COUNT}}</strong> 个（标准 ≥3 个 = 新品有机会挤入前20）
+  </div>
+</div>
+
+<!-- 品牌集中度（按销量 + 按预估销售额并列，方便对比） -->
+<div class="chart-row">
+  <div class="card">
+    <h2>🏢 品牌集中度（按销量占比）</h2>
+    <div class="chart-container"><canvas id="brandSalesChart"></canvas></div>
+    <table style="margin-top:12px;">
+      <tr><th>品牌</th><th>月销量</th><th>占比</th></tr>
+      {{BRAND_SALES_ROWS}}
+    </table>
+    <div style="margin-top:12px;padding:12px;background:#f9f9f9;border-radius:8px;font-size:13px;">
+      <strong>集中度指标：</strong><br>
+      TOP1 品牌：<strong>{{TOP1_BRAND}}</strong> 占 {{TOP1_BRAND_SHARE}}%<br>
+      TOP3 品牌合计：{{TOP3_BRAND_SHARE}}% | TOP5 品牌合计：{{TOP5_BRAND_SHARE}}%<br>
+      品牌分散度：<strong>{{BRAND_DISPERSION}}%</strong>（&gt;40% 为竞争型市场）
+    </div>
+  </div>
+  <div class="card">
+    <h2>💰 品牌集中度（按预估销售额占比）</h2>
+    <div class="chart-container"><canvas id="brandRevenueChart"></canvas></div>
+    <table style="margin-top:12px;">
+      <tr><th>品牌</th><th>预估销售额</th><th>占比</th></tr>
+      {{BRAND_REVENUE_ROWS}}
+    </table>
+    <div style="margin-top:12px;padding:12px;background:#f9f9f9;border-radius:8px;font-size:13px;">
+      <strong>集中度指标：</strong><br>
+      TOP1 品牌：<strong>{{TOP1_BRAND_REV}}</strong> 占 {{TOP1_BRAND_REV_SHARE}}%<br>
+      TOP3 品牌合计：{{TOP3_BRAND_REV_SHARE}}% | TOP5 品牌合计：{{TOP5_BRAND_REV_SHARE}}%<br>
+      品牌分散度：<strong>{{BRAND_REV_DISPERSION}}%</strong>（&gt;40% 为竞争型市场）
+    </div>
+  </div>
+</div>
+
+<!-- 评论数分布（市场成熟度）-->
+<div class="chart-row">
+  <div class="card">
+    <h2>💬 评论数分布（市场成熟度）</h2>
+    <div class="chart-container"><canvas id="reviewChart"></canvas></div>
+    <div style="margin-top:12px;padding:12px;background:#f9f9f9;border-radius:8px;font-size:13px;">
+      <strong>低评论数产品（&lt;500）：</strong>{{LOW_REVIEW_COUNT}} 个（{{LOW_REVIEW_PCT}}%）<br>
+      <span style="color:#666;">低评论数产品多 = 新进入者竞争压力较小；高评论数产品多 = 需突破评论壁垒</span>
+    </div>
+  </div>
+</div>
+
+<!-- 卖家性质 + 单品市场占比 -->
+<div class="chart-row">
+  <div class="card">
+    <h2>🏪 卖家性质与市场结构（按销量占比）</h2>
+    <div class="chart-container"><canvas id="sellerSalesChart"></canvas></div>
+    <div style="margin-top:12px;padding:12px;background:#f9f9f9;border-radius:8px;font-size:13px;">
+      最大卖家类型：<strong>{{TOP_SELLER_TYPE}}</strong> 占 {{TOP_SELLER_SHARE}}%<br>
+      <span style="color:#666;">只有亚马逊自营销量占比 &gt;50-60% 才构成垄断结构；FBA/FBM 是物流方式，不算垄断</span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>📊 单品市场占比（按销量）</h2>
+    <div style="padding:16px;">
+      <div style="display:flex;align-items:center;margin:16px 0;">
+        <div style="width:120px;font-size:14px;">TOP1 单品</div>
+        <div style="flex:1;background:#f0f0f0;border-radius:4px;height:24px;">
+          <div style="width:{{TOP1_ITEM_SHARE}}%;background:#1890ff;height:100%;border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;min-width:40px;">{{TOP1_ITEM_SHARE}}%</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;margin:16px 0;">
+        <div style="width:120px;font-size:14px;">TOP5 单品</div>
+        <div style="flex:1;background:#f0f0f0;border-radius:4px;height:24px;">
+          <div style="width:{{TOP5_ITEM_SHARE}}%;background:#36cfc9;height:100%;border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;min-width:40px;">{{TOP5_ITEM_SHARE}}%</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;margin:16px 0;">
+        <div style="width:120px;font-size:14px;">TOP10 单品</div>
+        <div style="flex:1;background:#f0f0f0;border-radius:4px;height:24px;">
+          <div style="width:{{TOP10_ITEM_SHARE}}%;background:#597ef7;height:100%;border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;min-width:40px;">{{TOP10_ITEM_SHARE}}%</div>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px dashed #e8e8e8;margin:12px 0;"></div>
+    <div style="font-size:13px;color:#666;margin-bottom:8px;">⬇ 按预估销售额</div>
+    <div style="padding:12px 16px;">
+      <div style="display:flex;align-items:center;margin:12px 0;">
+        <div style="width:120px;font-size:14px;">TOP1 单品</div>
+        <div style="flex:1;background:#f0f0f0;border-radius:4px;height:24px;">
+          <div style="width:{{TOP1_ITEM_REV_SHARE}}%;background:#722ed1;height:100%;border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;min-width:40px;">{{TOP1_ITEM_REV_SHARE}}%</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;margin:12px 0;">
+        <div style="width:120px;font-size:14px;">TOP5 单品</div>
+        <div style="flex:1;background:#f0f0f0;border-radius:4px;height:24px;">
+          <div style="width:{{TOP5_ITEM_REV_SHARE}}%;background:#9254de;height:100%;border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;min-width:40px;">{{TOP5_ITEM_REV_SHARE}}%</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;margin:12px 0;">
+        <div style="width:120px;font-size:14px;">TOP10 单品</div>
+        <div style="flex:1;background:#f0f0f0;border-radius:4px;height:24px;">
+          <div style="width:{{TOP10_ITEM_REV_SHARE}}%;background:#d3adf7;height:100%;border-radius:4px;display:flex;align-items:center;justify-content:center;color:white;font-size:12px;min-width:40px;">{{TOP10_ITEM_REV_SHARE}}%</div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:12px;background:#f9f9f9;border-radius:8px;font-size:13px;margin-top:8px;">
+      <strong>判断标准：</strong>TOP1 &gt; 30% = 一家独大，需谨慎<br>
+      核心问题：扣除头部后，剩余市场能否满足你的目标销量？
+    </div>
+  </div>
+</div>
+
+<!-- 进入限制 -->
+<div class="card">
+  <h2>🚧 进入限制分析</h2>
+  <ul class="barriers-list">
+    {{ENTRY_BARRIERS}}
+  </ul>
+</div>
+
+<!-- 竞争综合结论 -->
+<div class="card">
+  <h2>🎯 竞争综合判断</h2>
+  <ol style="line-height:2;">
+    {{COMP_REASONS}}
+  </ol>
+  <div class="conclusion {{COMP_CONCLUSION_CLASS}}">{{COMP_CONCLUSION}}<br><small>详见上方各项指标分析</small></div>
+</div>
+
+{{COMP_STANDARDS_REF}}
+
+{{SURVIVAL_HTML}}
+
+<!-- 新品销量分析（<6个月） -->
+<div class="card">
+  <h2>🆕 新品销量分析（&lt;6个月）</h2>
+  <div class="summary">
+    <div class="metric"><div class="value">{{NEW_COUNT}}</div><div class="label">新品数量</div></div>
+    <div class="metric"><div class="value">{{NEW_SALES_MAX}}</div><div class="label">新品最高销量</div></div>
+    <div class="metric"><div class="value">{{NEW_SALES_MEDIAN}}</div><div class="label">新品销量中位数</div></div>
+    <div class="metric"><div class="value">{{NEW_TOP_SHARE}}%</div><div class="label">单个新品最高市场占比</div></div>
+  </div>
+  <div style="margin-top:16px;padding:16px;background:#f9f9f9;border-radius:8px;font-size:13px;line-height:2;">
+    <strong>新品能达到的水平：</strong><br>
+    • 新品最高销量：{{NEW_SALES_MAX}}（市场占比 {{NEW_TOP_SHARE}}%）<br>
+    • 新品中位数销量：{{NEW_SALES_MEDIAN}}（市场占比 {{NEW_MEDIAN_SHARE}}%）<br>
+    • 新品平均销量：{{NEW_SALES_AVG}}<br>
+    <span style="color:#666;">市场总销量：{{TOTAL_SALES}} | 全市场销量中位数：{{SALES_MEDIAN}}</span>
+  </div>
+  <div style="margin-top:12px;padding:12px 14px;background:#f0f5ff;border-radius:8px;font-size:13px;line-height:1.8;color:#555;">
+    <strong>新品存活模块分析：</strong>{{NEW_SALES_SUMMARY}}。与 6 个月新品存活率一起判断：{{SURVIVAL_SUMMARY}}。
+  </div>
+  <table style="margin-top:16px;">
+    <tr><th>#</th><th>ASIN</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
+    {{NEW_PRODUCT_ROWS}}
+  </table>
+</div>
+
+<!-- <12个月产品分析 -->
+<div class="card">
+  <h2>📅 近1年产品销量分析（&lt;12个月）</h2>
+  <div class="summary">
+    <div class="metric"><div class="value">{{UNDER12M_COUNT}}</div><div class="label">产品数量</div></div>
+    <div class="metric"><div class="value">{{UNDER12M_PCT}}%</div><div class="label">占总数比例</div></div>
+    <div class="metric"><div class="value">{{UNDER12M_SHARE}}%</div><div class="label">销量占总市场</div></div>
+    <div class="metric"><div class="value">{{UNDER12M_SALES_MEDIAN}}</div><div class="label">销量中位数</div></div>
+  </div>
+  <div style="margin-top:16px;padding:16px;background:#f9f9f9;border-radius:8px;font-size:13px;line-height:2;">
+    <strong>近1年产品能达到的水平：</strong><br>
+    • 最高销量：{{UNDER12M_SALES_MAX}}（市场占比 {{UNDER12M_MAX_SHARE}}%）<br>
+    • 中位数销量：{{UNDER12M_SALES_MEDIAN}}（市场占比 {{UNDER12M_MEDIAN_SHARE}}%）<br>
+    • 平均销量：{{UNDER12M_SALES_AVG}}<br>
+    • 合计销量：{{UNDER12M_TOTAL}}（占总市场 {{UNDER12M_SHARE}}%）<br>
+    <span style="color:#666;">全市场销量中位数：{{SALES_MEDIAN}} | 总销量：{{TOTAL_SALES}}</span>
+  </div>
+  <table style="margin-top:16px;">
+    <tr><th>#</th><th>ASIN</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
+    {{UNDER12M_ROWS}}
+  </table>
+{{SEASONALITY_BLOCK}}
+{{LIFECYCLE_BLOCK}}
+{{KNOWLEDGE_AUDIT_BLOCK}}
+
+<!-- 排除的产品 -->
+  <div class="scroll-table">
+    <table>
+      <tr><th>#</th><th>ASIN</th><th>产品名称</th><th>类目</th></tr>
+      {{EXCLUDED_ROWS}}
+    </table>
+  </div>
+</div>
+
+<!-- 产品明细 -->
+<div class="card">
+  <h2>📋 全部 {{FILTERED_COUNT}} 个产品明细（按 BSR 排序，{{TIME_RANGE}}）</h2>
+  <div class="scroll-table">
+    <table>
+      <tr><th>#</th><th>产品名称</th><th>ASIN</th><th>销量</th><th>BSR</th><th>小类排名</th><th>价格</th><th>上架时间</th><th>评论数</th><th>品牌</th></tr>
+      {{PRODUCT_ROWS}}
+    </table>
+  </div>
+</div>
+
+<!-- 关键词来源明细 -->
+<div class="card">
+  <h2>📊 关键词来源明细（合并前 Oalur 总数：{{RAW_TOTAL}} 条）</h2>
+  <table>
+    <tr><th>#</th><th>关键词</th><th>Oalur 原始数量</th></tr>
+    {{KW_SOURCE_ROWS}}
+  </table>
+  <div style="margin-top:12px;padding:12px;background:#f9f9f9;border-radius:8px;font-size:13px;">
+    合并去重后：{{TOTAL}} 条 | 类目过滤后：{{FILTERED_COUNT}} 条
+  </div>
+</div>
+
+<script>
+  new Chart(document.getElementById('bsrChart'), {
+    type: 'bar',
+    data: {
+      labels: {{BSR_LABELS}},
+      datasets: [{ label: '产品数量', data: {{BSR_DATA}}, backgroundColor: ['#1890ff','#36cfc9','#597ef7','#9254de','#f759ab'], borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 5 } } } }
+  });
+  new Chart(document.getElementById('ageChart'), {
+    type: 'bar',
+    data: {
+      labels: {{AGE_LABELS}},
+      datasets: [{ label: '产品数量', data: {{AGE_DATA}}, backgroundColor: ['#52c41a','#73d13d','#95de64','#b7eb8f','#d9f7be','#f6ffed'], borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 5 } } } }
+  });
+  new Chart(document.getElementById('priceChart'), {
+    type: 'doughnut',
+    data: {
+      labels: {{PRICE_LABELS}},
+      datasets: [{ data: {{PRICE_DATA}}, backgroundColor: ['#ff4d4f','#faad14','#52c41a','#1890ff','#722ed1'] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+  new Chart(document.getElementById('brandRevenueChart'), {
+    type: 'bar',
+    data: {
+      labels: {{TOP10_BRAND_REV_LABELS}},
+      datasets: [{ label: '销售额占比(%)', data: {{TOP10_BRAND_REV_DATA}}, backgroundColor: '#722ed1', borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { callback: v => v + '%' } } } }
+  });
+  // 品牌集中度（按销量占比）
+  new Chart(document.getElementById('brandSalesChart'), {
+    type: 'bar',
+    data: {
+      labels: {{TOP10_BRAND_SALES_LABELS}},
+      datasets: [{ label: '销量占比(%)', data: {{TOP10_BRAND_SALES_DATA}}, backgroundColor: '#1890ff', borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { callback: v => v + '%' } } } }
+  });
+  // 评论数分布
+  new Chart(document.getElementById('reviewChart'), {
+    type: 'bar',
+    data: {
+      labels: {{REVIEW_LABELS}},
+      datasets: [{ label: '产品数量', data: {{REVIEW_DATA}}, backgroundColor: ['#52c41a','#73d13d','#1890ff','#faad14','#ff4d4f'], borderRadius: 4 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 5 } } } }
+  });
+  // 卖家性质（按销量占比）
+  new Chart(document.getElementById('sellerSalesChart'), {
+    type: 'doughnut',
+    data: {
+      labels: {{SELLER_SALES_LABELS}},
+      datasets: [{ data: {{SELLER_SALES_DATA}}, backgroundColor: ['#ff4d4f','#faad14','#52c41a','#1890ff'] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed + '%' } } } }
+  });
+</script>
+
+</body>
+</html>

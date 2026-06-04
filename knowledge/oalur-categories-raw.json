@@ -1,0 +1,1826 @@
+[
+  {
+    "name": "Amazon Devices & Accessories(亚马逊设备和配件)",
+    "count": "147",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Appliances(电器)",
+    "count": "8,310",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Arts, Crafts & Sewing(艺术、工艺品和缝纫)",
+    "count": "221,825",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Automotive(汽车)",
+    "count": "984,551",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Baby(婴儿)",
+    "count": "96,893",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Beauty & Personal Care(美容及个人护理)",
+    "count": "301,666",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Camera & Photo Products(相机和摄影产品)",
+    "count": "71,262",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Cell Phones & Accessories(手机及配件)",
+    "count": "82,208",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Clothing, Shoes & Jewelry(服装、鞋子和珠宝)",
+    "count": "4,179,104",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Computers & Accessories(电脑及配件)",
+    "count": "126,949",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Electronics(电子产品)",
+    "count": "416,185",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Handmade Products(手工制品)",
+    "count": "8,526",
+    "level": 0,
+    "hasArrow": false
+  },
+  {
+    "name": "Health & Household(健康与家居)",
+    "count": "392,114",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Home & Kitchen(家居及厨房)",
+    "count": "1,007,585",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Industrial & Scientific(工业与科学)",
+    "count": "992,307",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Kitchen & Dining(厨房和餐厅)",
+    "count": "285,976",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Musical Instruments(乐器)",
+    "count": "121,999",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Office Products(办公用品)",
+    "count": "221,378",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Patio, Lawn & Garden(庭院、草坪和花园)",
+    "count": "350,401",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Pet Supplies(宠物用品)",
+    "count": "182,753",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Sports & Outdoors(运动与户外)",
+    "count": "2,352,270",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Tools & Home Improvement(工具和家居装修)",
+    "count": "665,321",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Toys & Games(玩具和游戏)",
+    "count": "270,845",
+    "level": 0,
+    "hasArrow": true
+  },
+  {
+    "name": "Amazon Device Accessories(亚马逊设备配件)",
+    "count": "34",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Amazon Device Subscriptions(亚马逊设备订阅)",
+    "count": "-",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Amazon Devices(亚马逊设备)",
+    "count": "122",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Appliance Warranties(家电保修)",
+    "count": "74",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Cooktops(炉灶面)",
+    "count": "547",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Dishwashers(洗碗机)",
+    "count": "896",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Freezers(冰柜)",
+    "count": "782",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Ice Makers(制冰机)",
+    "count": "892",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Range Hoods(抽油烟机)",
+    "count": "642",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Ranges(范围)",
+    "count": "494",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Refrigerators(冰箱)",
+    "count": "542",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Wall Ovens(壁挂式烤箱)",
+    "count": "511",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Warming Drawers(保温抽屉)",
+    "count": "111",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Washers & Dryers(洗衣机和烘干机)",
+    "count": "2,145",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Wine Cellars(酒窖)",
+    "count": "686",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Beading & Jewelry Making(串珠和珠宝制作)",
+    "count": "24,745",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Craft Supplies(工艺用品和材料)",
+    "count": "64,755",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Fabric(工艺及爱好面料)",
+    "count": "4,073",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Fabric Painting & Dyeing(布艺装饰)",
+    "count": "1,174",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Knitting & Crochet(针织和钩编用品)",
+    "count": "10,202",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Needlework(针线活用品)",
+    "count": "11,093",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Organization & Storage(艺术、工艺品和缝纫用品储藏室)",
+    "count": "7,258",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Painting, Drawing & Art Supplies(绘画、绘画和艺术用品)",
+    "count": "30,760",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Photo Transfer & Coloring Supplies(剪贴簿照片传输和着色)",
+    "count": "291",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Printmaking(版画用品)",
+    "count": "5,330",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Scrapbooking(剪贴簿和冲压用品)",
+    "count": "37,525",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Sewing(缝纫产品)",
+    "count": "47,118",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Thread & Floss(缝纫线和牙线)",
+    "count": "2,185",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Yarn(纱)",
+    "count": "3,231",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Car Care(汽车保养)",
+    "count": "17,865",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Exterior Accessories(汽车外饰件)",
+    "count": "101,654",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Interior Accessories(汽车内饰配件)",
+    "count": "63,036",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Light & Lighting Accessories(灯、灯泡和指示灯)",
+    "count": "38,809",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Motorcycle & ATV(摩托车和动力运动)",
+    "count": "137,014",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Oils & Fluids(油和液体)",
+    "count": "11,529",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Paint & Paint Supplies(汽车油漆及油漆用品)",
+    "count": "5,710",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Performance Parts & Accessories(汽车性能零配件)",
+    "count": "23,084",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "RV Parts & Accessories(房车零件及配件)",
+    "count": "42,342",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Replacement Parts(汽车更换零件)",
+    "count": "548,506",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Tools & Equipment(汽车工具和设备)",
+    "count": "78,011",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Wheels & Tires(汽车轮胎和车轮)",
+    "count": "42,121",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Activity & Entertainment(婴儿活动和娱乐产品)",
+    "count": "3,160",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Baby Care(婴儿护理用品)",
+    "count": "10,600",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Car Seats(儿童安全汽车座椅及配件)",
+    "count": "6,404",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Diapering(婴儿尿布产品)",
+    "count": "10,403",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Feeding(婴幼儿喂养用品)",
+    "count": "15,276",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "For Moms(孕妇及孕妇用品)",
+    "count": "2,454",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Gifts(婴儿礼物)",
+    "count": "4,511",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Nursery(儿童房家具、床上用品和装饰)",
+    "count": "36,417",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Potty Training(如厕训练产品)",
+    "count": "1,861",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Safety(婴儿安全产品)",
+    "count": "6,321",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Strollers(婴儿推车)",
+    "count": "1,596",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Travel Gear(婴儿旅行装备)",
+    "count": "17,636",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Foot, Hand & Nail Care(足部、手部和指甲护理产品)",
+    "count": "47,571",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Fragrance(香水与香精)",
+    "count": "10,294",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Gift Sets(美容礼品套装)",
+    "count": "915",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Hair Care(护发产品)",
+    "count": "78,305",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Makeup(化妆品)",
+    "count": "31,830",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Personal Care(个人护理产品)",
+    "count": "97,223",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Salon & Spa Equipment(沙龙和水疗设备)",
+    "count": "6,769",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Shave & Hair Removal(剃须和脱毛产品)",
+    "count": "26,594",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Skin Care(护肤品)",
+    "count": "41,617",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Tools & Accessories(美容工具及配件)",
+    "count": "73,088",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Accessories(相机和照片配件)",
+    "count": "59,630",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Bags & Cases(相机包及相机包)",
+    "count": "5,209",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Binoculars & Scopes(双筒望远镜、望远镜和光学器件)",
+    "count": "4,360",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Camcorders(摄像机)",
+    "count": "564",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "DSLR Cameras(单反相机)",
+    "count": "456",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Digital Picture Frames(数码相框)",
+    "count": "451",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Lenses(摄像机和相机镜头)",
+    "count": "1,868",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Point & Shoot Digital Cameras(数码傻瓜相机)",
+    "count": "1,027",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Surveillance Cameras(监控和安全摄像头)",
+    "count": "3,408",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Accessories(手机配件)",
+    "count": "62,029",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Cases, Holsters & Clips(手机壳和保护套)",
+    "count": "19,038",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "SIM Cards & Prepaid Minutes(SIM 卡和预付费分钟数)",
+    "count": "616",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Baby(婴儿服装和鞋子)",
+    "count": "151,468",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Boys(男童时尚)",
+    "count": "302,404",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Costumes & Accessories(服装及配饰)",
+    "count": "65,805",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Girls(女童时尚)",
+    "count": "309,643",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Luggage & Travel Gear(行李箱和旅行装备)",
+    "count": "57,720",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Men(男士时尚)",
+    "count": "1,406,744",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Novelty & More(新奇及更多)",
+    "count": "225,293",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Shoe, Jewelry & Watch Accessories(鞋履、珠宝及手表配件)",
+    "count": "34,980",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Sport Specific Clothing(运动专用服装)",
+    "count": "962,914",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Uniforms, Work & Safety(制服、工作与安全)",
+    "count": "135,562",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Women(女装时尚)",
+    "count": "1,802,170",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Computer Accessories & Peripherals(电脑配件及外围设备)",
+    "count": "50,129",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Computer Components(电脑部件)",
+    "count": "18,147",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Data Storage(数据存储)",
+    "count": "4,269",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Desktops(台式电脑)",
+    "count": "7,120",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "External Components(电脑外部组件)",
+    "count": "3,565",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Laptop Accessories(笔记本电脑配件)",
+    "count": "17,390",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Laptops(笔记本电脑)",
+    "count": "9,629",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Monitors(电脑显示器)",
+    "count": "2,357",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Networking Products(计算机网络)",
+    "count": "6,624",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Printers(电脑打印机)",
+    "count": "2,528",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Routers(电脑路由器)",
+    "count": "513",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Scanners(电脑扫描仪)",
+    "count": "1,003",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Servers(计算机服务器)",
+    "count": "429",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Tablet Accessories(平板电脑配件)",
+    "count": "9,628",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Tablets(平板电脑)",
+    "count": "1,046",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Warranties & Services(计算机保修和服务)",
+    "count": "403",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Accessories & Supplies(电子配件及用品)",
+    "count": "169,611",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Camera & Photo(相机和摄影产品)",
+    "count": "85,277",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Car Electronics(汽车电子)",
+    "count": "21,989",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Cell Phones & Accessories(手机及配件)",
+    "count": "62,134",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Computers & Accessories(电脑及配件)",
+    "count": "125,796",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "GPS & Navigation(GPS、探测器和配件)",
+    "count": "7,738",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Headphones(耳机和耳塞)",
+    "count": "6,681",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Home Audio & Theater(家庭音响和影院产品)",
+    "count": "21,972",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Marine Electronics(船用电子产品)",
+    "count": "3,130",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Office Electronics(办公电子产品)",
+    "count": "24,351",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Portable Audio & Video(便携式音频和视频)",
+    "count": "21,875",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Security & Surveillance(安全及监控设备)",
+    "count": "10,371",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Service & Replacement Plans(计算机和电子产品服务计划)",
+    "count": "404",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Televisions & Video(电视和视频产品)",
+    "count": "25,988",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Video Game Consoles & Accessories(视频游戏机及配件)",
+    "count": "23,237",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Video Projectors(视频投影仪)",
+    "count": "917",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Wearable Technology(可穿戴技术)",
+    "count": "18,079",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "eBook Readers & Accessories(电子书阅读器和配件)",
+    "count": "4,067",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Baby & Child Care(婴儿及儿童护理产品)",
+    "count": "7,344",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Diet & Sports Nutrition(饮食与运动营养)",
+    "count": "16,069",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Health Care(保健品)",
+    "count": "69,492",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "House Supplies(家居用品)",
+    "count": "61,297",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Medical Supplies & Equipment(家用医疗用品和设备)",
+    "count": "65,530",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Oral Care(口腔护理产品)",
+    "count": "13,474",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Sales & Deals(销售与优惠)",
+    "count": "4,538",
+    "level": 1,
+    "hasArrow": false
+  },
+  {
+    "name": "Sexual Wellness(性健康产品)",
+    "count": "14,981",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Sports Nutrition(运动营养产品)",
+    "count": "9,500",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Stationery & Gift Wrapping Supplies(文具和礼品包装用品)",
+    "count": "14,377",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Vision Care(视觉产品)",
+    "count": "6,913",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Vitamins, Minerals & Supplements(维生素、矿物质和补充剂)",
+    "count": "43,573",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Wellness & Relaxation(健康与放松产品)",
+    "count": "29,084",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Bath(沐浴用品)",
+    "count": "53,392",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Bedding(寝具)",
+    "count": "93,171",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Cleaning Supplies(家居清洁用品)",
+    "count": "25,222",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Furniture(家具)",
+    "count": "115,951",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Heating, Cooling & Air Quality(供暖、制冷和空气质量)",
+    "count": "32,031",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Home Décor(家居装饰产品)",
+    "count": "254,162",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Irons & Steamers(熨烫产品)",
+    "count": "4,116",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Kids' Home Store(儿童家居店)",
+    "count": "73,172",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Kitchen & Dining(厨房和餐厅)",
+    "count": "360,978",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Seasonal Décor(季节性装饰)",
+    "count": "24,415",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Storage & Organization(家庭储物和整理)",
+    "count": "112,240",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Vacuums & Floor Care(吸尘器和地板护理)",
+    "count": "16,445",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Wall Décor(艺术墙)",
+    "count": "11,047",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Abrasive & Finishing Products(磨料和精加工产品)",
+    "count": "19,116",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Additive Manufacturing Products(增材制造产品)",
+    "count": "5,516",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Adhesives, Sealants & Lubricants(工业粘合剂、密封剂和润滑剂)",
+    "count": "15,033",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Commercial Door Products(商业门产品)",
+    "count": "10,280",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Commercial Lighting(商业照明产品)",
+    "count": "2,343",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Cutting Tools(切削工具)",
+    "count": "42,744",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Digital Signage(数字标牌设备)",
+    "count": "1,904",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Fasteners(紧固件)",
+    "count": "51,160",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Filtration(过滤)",
+    "count": "14,598",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Food Service Equipment & Supplies(餐饮服务设备及用品)",
+    "count": "147,255",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Hydraulics, Pneumatics & Plumbing(液压、气动和管道)",
+    "count": "54,631",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Industrial Electrical(电子元件)",
+    "count": "98,251",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Industrial Hardware(工业五金)",
+    "count": "26,242",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Janitorial & Sanitation Supplies(清洁和卫生用品)",
+    "count": "33,217",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Lab & Scientific Products(实验室和科学产品)",
+    "count": "81,033",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Material Handling Products(物料搬运产品)",
+    "count": "37,798",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Occupational Health & Safety Products(职业健康与安全产品)",
+    "count": "41,233",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Packaging & Shipping Supplies(包装和运输用品)",
+    "count": "9,171",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Power & Hand Tools(工业电动和手动工具)",
+    "count": "53,292",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Power Transmission Products(输电产品)",
+    "count": "48,987",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Professional Dental Supplies(专业牙科用品)",
+    "count": "86,114",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Professional Medical Supplies(专业医疗用品)",
+    "count": "136,710",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Raw Materials(工业材料)",
+    "count": "29,274",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Retail Store Fixtures & Equipment(零售店固定装置和设备)",
+    "count": "21,538",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Robotics(机器人技术)",
+    "count": "1,800",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Science Education(科教用品)",
+    "count": "5,520",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Test, Measure & Inspect(测试、测量和检查)",
+    "count": "50,650",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Band & Orchestra(乐队和管弦乐队乐器)",
+    "count": "6,909",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Bass Guitars(低音吉他)",
+    "count": "873",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "DJ, Electronic Music & Karaoke(电子音乐、DJ 和卡拉 OK)",
+    "count": "18,122",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Drums & Percussion(鼓与打击乐)",
+    "count": "15,831",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Guitars(吉他)",
+    "count": "3,763",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Instrument Accessories(乐器配件)",
+    "count": "60,392",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Keyboards(乐器键盘和 MIDI)",
+    "count": "2,900",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Live Sound & Stage(舞台及音响设备)",
+    "count": "17,657",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Recording Equipment(音乐录音设备)",
+    "count": "23,709",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Ukuleles, Mandolins & Banjos(尤克里里琴、曼陀林和班卓琴)",
+    "count": "1,023",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Education & Crafts(教育用品和工艺用品)",
+    "count": "55,800",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Envelopes, Mailers & Shipping Supplies(邮件用品和运输用品)",
+    "count": "11,310",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Office Furniture & Accessories(办公家具及照明)",
+    "count": "24,339",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Office Lighting(办公室照明)",
+    "count": "2,518",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Office Supplies(办公及学校用品)",
+    "count": "175,100",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Presentation Boards(演示用品)",
+    "count": "4,445",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Farm & Ranch(农场与牧场)",
+    "count": "46,584",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Gardening(园艺和草坪护理)",
+    "count": "95,657",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Generators & Portable Power(户外发电机和便携式电源)",
+    "count": "8,047",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Grills & Outdoor Cooking(户外烹饪)",
+    "count": "23,160",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Mowers & Outdoor Power Tools(户外电源和草坪设备)",
+    "count": "44,108",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Outdoor Décor(户外装饰)",
+    "count": "84,468",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Outdoor Heating(室外供暖和制冷)",
+    "count": "7,594",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Outdoor Storage(户外储藏室和住房)",
+    "count": "3,051",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Patio Furniture & Accessories(庭院家具及配件)",
+    "count": "58,701",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Pest Control(害虫防治产品)",
+    "count": "6,063",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Pools, Hot Tubs & Supplies(泳池、热水浴缸及用品)",
+    "count": "21,677",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Snow Removal(除雪工具)",
+    "count": "5,087",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Birds(宠物鸟用品)",
+    "count": "8,022",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Cats(猫用品)",
+    "count": "42,870",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Dogs(狗用品)",
+    "count": "98,487",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Fish & Aquatic Pets(鱼类和水生宠物)",
+    "count": "13,364",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Horses(马用品)",
+    "count": "11,707",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Reptiles & Amphibians(爬行动物和两栖动物用品)",
+    "count": "6,954",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Small Animals(小动物用品)",
+    "count": "9,027",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Accessories(运动及户外休闲配件)",
+    "count": "56,298",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Exercise & Fitness(运动和健身器材)",
+    "count": "1,009,397",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Fan Shop(体育迷商店)",
+    "count": "175,595",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Hunting & Fishing(狩猎和钓鱼产品)",
+    "count": "118,023",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Memorabilia Display & Storage(纪念品展示和存储)",
+    "count": "4,013",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Outdoor Recreation(户外休闲)",
+    "count": "813,810",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Sports(运动服装及装备)",
+    "count": "1,679,539",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Sports Medicine(运动医学产品)",
+    "count": "15,086",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Air Tools(气动工具)",
+    "count": "3,104",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Appliances(家电)",
+    "count": "59,644",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Building Supplies(建筑用品)",
+    "count": "72,209",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Electrical(电气设备)",
+    "count": "40,839",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Hardware(硬件)",
+    "count": "117,719",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Kitchen & Bath Fixtures(厨房和浴室设备)",
+    "count": "60,220",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Lighting & Ceiling Fans(照明和吊扇)",
+    "count": "69,261",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Measuring & Layout Tools(测量与布局)",
+    "count": "12,665",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Paint, Wall Treatments & Supplies(油漆、墙面处理及用品)",
+    "count": "27,360",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Plumbing(泵和管道设备)",
+    "count": "22,539",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Power & Hand Tools(电动工具和手动工具)",
+    "count": "157,013",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Safety & Security(安全与安保)",
+    "count": "51,473",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Storage & Home Organization(家庭储物和整理)",
+    "count": "14,900",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Action & Toy Figures(玩具人偶和玩具套装)",
+    "count": "9,537",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Arts & Crafts(工艺品用品)",
+    "count": "15,661",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Baby & Toddler Toys(婴幼儿玩具)",
+    "count": "8,603",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Bikes, Skates & Ride-Ons(三轮车、踏板车和货车)",
+    "count": "26,128",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Building & Construction Toys(拼搭玩具)",
+    "count": "5,550",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Collectible Card Games(集换式卡牌游戏)",
+    "count": "4,134",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Dolls & Accessories(娃娃及配件)",
+    "count": "7,722",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Dressing Up & Costumes(儿童装扮和假装游戏)",
+    "count": "21,925",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Electronics for Kids(儿童电子产品)",
+    "count": "5,151",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Games(游戏及配件)",
+    "count": "26,146",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Learning & Education(学习和教育玩具)",
+    "count": "11,809",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Musical Instruments(儿童乐器)",
+    "count": "1,490",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Novelty & Gag Toys(新奇玩具和娱乐)",
+    "count": "18,189",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Party Supplies(儿童派对用品)",
+    "count": "22,586",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Play Vehicles(玩具车)",
+    "count": "8,700",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Puppets & Puppet Theaters(木偶和木偶剧院)",
+    "count": "1,373",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Puzzles(谜题)",
+    "count": "6,048",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Remote- & App-Controlled Toys(爱好遥控和应用程序控制的车辆和零件)",
+    "count": "40,938",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Sports & Outdoor Play(运动及户外玩具)",
+    "count": "32,945",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Stuffed Animals & Toys(毛绒动物和毛绒玩具)",
+    "count": "10,520",
+    "level": 1,
+    "hasArrow": true
+  },
+  {
+    "name": "Embroidery Thread & Floss(绣花线和牙线)",
+    "count": "916",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Quilting(绗缝线)",
+    "count": "389",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Serger(包缝线)",
+    "count": "174",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Sewing(缝纫线)",
+    "count": "1,223",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Men's(男士剃须和脱毛产品)",
+    "count": "19,449",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Women's(女士剃须和脱毛产品)",
+    "count": "10,254",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Body(身体护肤品)",
+    "count": "12,123",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Eyes(眼部护理产品)",
+    "count": "4,153",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Face(面部护肤品)",
+    "count": "17,646",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Lip Care(唇部护理产品)",
+    "count": "3,064",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Maternity(孕妇皮肤护理)",
+    "count": "438",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Sets & Kits(护肤套装)",
+    "count": "782",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Sunscreens & Tanning Products(防晒护肤)",
+    "count": "4,432",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Bag & Case Accessories(相机及相片盒及包袋配件)",
+    "count": "841",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Binocular Cases(双目镜盒)",
+    "count": "205",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Binocular, Camera & Camcorder Straps(双筒望远镜、相机和摄像机带)",
+    "count": "590",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Camcorder Cases(摄像机盒)",
+    "count": "251",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Camera Cases(相机包)",
+    "count": "1,714",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Filter Cases(相机滤镜袋和保护套)",
+    "count": "266",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Lens Cases(相机镜头包和盒)",
+    "count": "675",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Telescope Cases(望远镜盒)",
+    "count": "225",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Tripod & Monopod Cases(三脚架和独脚架盒)",
+    "count": "417",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Computer Cases(电脑机箱)",
+    "count": "692",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "External Hard Drives(外置硬盘)",
+    "count": "561",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "External Solid State Drives(外部固态硬盘)",
+    "count": "463",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "External Sound Cards(外置声卡)",
+    "count": "267",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "External TV Tuners(外部电视调谐器)",
+    "count": "216",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "KVM Switches(KVM切换器)",
+    "count": "450",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Optical Drives(外置光驱)",
+    "count": "918",
+    "level": 2,
+    "hasArrow": true
+  },
+  {
+    "name": "Earbuds(耳塞)",
+    "count": "1",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Smart Wristbands(智能手环)",
+    "count": "1",
+    "level": 2,
+    "hasArrow": false
+  },
+  {
+    "name": "Smartglasses(智能眼镜)",
+    "count": "-",
+    "level": 2,
+    "hasArrow": false
+  }
+]
