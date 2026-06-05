@@ -52,6 +52,9 @@ const dataFile = process.argv[2];
 if (!dataFile) { console.error('鐢ㄦ硶: node generate-report.js <鏁版嵁鏂囦欢.json> [--seasonality <瀛ｈ妭鎬ф暟鎹?json>] [--historical <鍘嗗彶鏁版嵁.json>] [--asin-lifecycle <鐢熷懡鍛ㄦ湡.json>]'); process.exit(1); }
 const resolvedDataPath = path.isAbsolute(dataFile) ? dataFile : path.join(process.cwd(), dataFile);
 const jsonData = JSON.parse(fs.readFileSync(resolvedDataPath, 'utf-8'));
+const targetCategoryDisplay = Array.isArray(jsonData.targetCategories) && jsonData.targetCategories.length
+  ? jsonData.targetCategories.join('；')
+  : (jsonData.targetCategory || '未知');
 
 // 鍙€夌殑瀛ｈ妭鎬т笌鐢熷懡鍛ㄦ湡鍒嗘瀽鏁版嵁
 const seasonalityIdx = process.argv.indexOf('--seasonality');
@@ -678,7 +681,7 @@ const replacements = {
   '{{KEYWORD}}': jsonData.keyword || '未知',
   '{{DATE}}': REPORT_DATE,
   '{{MAX_BSR}}': bsrMax.toLocaleString(),
-  '{{TARGET_CATEGORY}}': jsonData.targetCategory || '未知',
+  '{{TARGET_CATEGORY}}': targetCategoryDisplay,
   '{{ALL_COUNT}}': jsonData.allCount || 0,
   '{{FILTERED_COUNT}}': data.length,
   '{{EXCLUDED_COUNT}}': excluded.length,
@@ -1721,7 +1724,7 @@ auditItems.push(auditRow(
 auditItems.push(auditRow(
   '中风险',
   '专利/认证风险未排查',
-  `目标类目：${jsonData.targetCategory || '--'}；当前报告未检查 USPTO、外观专利、食品接触材料或儿童产品认证`,
+  `目标类目：${targetCategoryDisplay || '--'}；当前报告未检查 USPTO、外观专利、食品接触材料或儿童产品认证`,
   '知识库指出“需求大但卖家少”可能意味着专利或认证门槛。Cookie Cutter 属厨房/食品接触工具，材料安全与食品接触合规需要单独确认。',
   '补充 USPTO/Google 图片/专利库检索、食品接触材料要求、工厂认证文件，报告中增加合规结论。'
 ));
@@ -1788,7 +1791,7 @@ fs.writeFileSync(outPath, html, 'utf-8');
 console.log('报告已保存:', outPath);
 console.log('\n=== 摘要 ===');
 console.log('关键词:', jsonData.keyword);
-console.log('目标类目:', jsonData.targetCategory);
+console.log('目标类目:', targetCategoryDisplay);
 console.log('过滤后:', data.length, '条 | 排除:', excluded.length, '条');
 console.log('新品:', newProducts, '个 (' + newPct + '%)');
 console.log('结论:', conclusion, '-', reason);

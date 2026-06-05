@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { selectTargetCategories } = require('./category-selector');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -89,11 +90,13 @@ const sortedCats = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
 console.log('\n📊 类目分布 (Top 10):');
 sortedCats.slice(0, 10).forEach(([cat, count]) => console.log(`  [${count}] ${cat}`));
 
-const topCat = sortedCats.find(([cat]) => cat !== '未识别');
-const targetCategory = topCat ? topCat[0] : '';
-const filtered = allRawData.filter(d => d.category === targetCategory);
-const excluded = allRawData.filter(d => d.category !== targetCategory);
-console.log(`\n🎯 目标类目: ${targetCategory}`);
+const categorySelectionResult = selectTargetCategories(allRawData, keywords);
+const targetCategory = categorySelectionResult.targetCategory;
+const targetCategories = categorySelectionResult.targetCategories;
+const targetCategorySet = new Set(targetCategories);
+const filtered = allRawData.filter(d => targetCategorySet.has(d.category || '未识别'));
+const excluded = allRawData.filter(d => !targetCategorySet.has(d.category || '未识别'));
+console.log(`\n🎯 目标类目组: ${targetCategories.join(' | ')}`);
 console.log(`✅ 过滤: ${allRawData.length} → ${filtered.length} 条, 排除 ${excluded.length} 条`);
 
 // BSR 范围
@@ -110,6 +113,8 @@ const output = {
   filteredCount: filtered.length,
   excludedCount: excluded.length,
   targetCategory,
+  targetCategories,
+  categorySelection: categorySelectionResult.categorySelection,
   categoryDistribution: sortedCats,
   keywordStats,
   data: filtered,
