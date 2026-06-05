@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 function safeSegment(value) {
-  return String(value || 'output').trim().toLowerCase().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
+  return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
 }
 
 function outputDirs(taskName) {
@@ -53,7 +53,10 @@ const asinData = [];
 
 for (const asin of asins) {
   const files = fs.readdirSync(DOWNLOAD_DIR)
-    .filter(f => f.startsWith('价格&排名趋势_' + asin + '_') && f.endsWith('.xlsx'))
+    .filter(f => (
+      f.startsWith('价格&排名趋势_' + asin + '_') ||
+      f.startsWith('price-rank-trend_' + asin + '_')
+    ) && f.endsWith('.xlsx'))
     .map(f => ({ name: f, mtime: fs.statSync(path.join(DOWNLOAD_DIR, f)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime);
 

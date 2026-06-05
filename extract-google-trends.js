@@ -46,6 +46,61 @@ async function extract(browser, kw) {
   console.log(`🌐 导航至 Google Trends...`);
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await new Promise(r => setTimeout(r, 5000));
+  try {
+    const apiResult = await page.evaluate(async (keyword) => {
+      const stripPrefix = text => text.replace(/^\)\]\}',?\n/, '');
+      const exploreReq = {
+        comparisonItem: [{ keyword, geo: 'US', time: 'today 5-y' }],
+        category: 0,
+        property: ''
+      };
+      const exploreUrl = '/trends/api/explore?hl=en-US&tz=480&req=' + encodeURIComponent(JSON.stringify(exploreReq));
+      const exploreRes = await fetch(exploreUrl, { credentials: 'include' });
+      if (!exploreRes.ok) throw new Error('explore api status ' + exploreRes.status);
+      const exploreJson = JSON.parse(stripPrefix(await exploreRes.text()));
+      const widget = (exploreJson.widgets || []).find(w => w.id === 'TIMESERIES');
+      if (!widget) throw new Error('TIMESERIES widget not found');
+
+      const multilineUrl = '/trends/api/widgetdata/multiline?hl=en-US&tz=480&req='
+        + encodeURIComponent(JSON.stringify(widget.request))
+        + '&token=' + encodeURIComponent(widget.token);
+      const multilineRes = await fetch(multilineUrl, { credentials: 'include' });
+      if (!multilineRes.ok) throw new Error('multiline api status ' + multilineRes.status);
+      const multilineJson = JSON.parse(stripPrefix(await multilineRes.text()));
+      return (multilineJson.default?.timelineData || [])
+        .map(point => ({
+          date: new Date(Number(point.time) * 1000).toISOString().slice(0, 10),
+          value: Number(point.value?.[0])
+        }))
+        .filter(point => point.date && Number.isFinite(point.value));
+    }, kw);
+
+    if (apiResult.length > 0) {
+      const peak = apiResult.reduce((a, b) => a.value > b.value ? a : b, apiResult[0]);
+      const valley = apiResult.reduce((a, b) => a.value < b.value ? a : b, apiResult[0]);
+      const result = {
+        keyword: kw,
+        source: 'google-trends',
+        geo: 'US',
+        period: '过去5年',
+        extractedAt: new Date().toISOString(),
+        totalPoints: apiResult.length,
+        data5Years: apiResult,
+        peak: { date: peak.date, value: peak.value },
+        valley: { date: valley.date, value: valley.value },
+      };
+      fs.writeFileSync(outFile, JSON.stringify(result, null, 2), 'utf-8');
+      console.log(`API extracted ${apiResult.length} points`);
+      console.log(`  Range: ${apiResult[0].date} ~ ${apiResult[apiResult.length - 1].date}`);
+      console.log(`  Peak: ${peak.date}=${peak.value}`);
+      console.log(`  Valley: ${valley.date}=${valley.value}`);
+      console.log(`Data saved: ${outFile}`);
+      await page.close();
+      return result;
+    }
+  } catch (apiError) {
+    console.log(`Google Trends API failed, fallback to page text extraction: ${apiError.message}`);
+  }
 
   // 切换到"过去 5 年"
   console.log('⏰ 设置时间范围: 过去 5 年...');
@@ -153,3 +208,4 @@ async function extract(browser, kw) {
   }
   process.exit(1);
 });
+

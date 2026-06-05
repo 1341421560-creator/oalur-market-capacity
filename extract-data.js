@@ -3,6 +3,20 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+const OALUR_FILTER_URL = 'https://vip.oalur.com/insight/filter/index?site=US';
+const OALUR_NAV_TIMEOUT_MS = 30000;
+
+async function gotoOalurFilter(page, contextLabel = 'Oalur page') {
+  try {
+    await page.goto(OALUR_FILTER_URL, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
+  } catch (error) {
+    if (String(error?.message || '').toLowerCase().includes('timeout')) {
+      console.error(`ERROR: ${contextLabel} navigation timed out after 30s. Stop execution and report to user.`);
+    }
+    throw error;
+  }
+}
+
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
 }
@@ -193,7 +207,7 @@ async function extractKeyword(page, keyword) {
   console.log('='.repeat(50));
 
   // 0. 每次重新加载页面，确保干净状态
-  await page.goto('https://vip.oalur.com/insight/filter/index?site=US', { waitUntil: 'networkidle2', timeout: 30000 });
+  await gotoOalurFilter(page, `keyword ${keyword}`);
   await new Promise(r => setTimeout(r, 3000));
 
   // 1. 清空旧输入并输入新关键词
@@ -335,7 +349,7 @@ async function extractKeyword(page, keyword) {
   let page = pages.find(p => p.url().includes('oalur.com/insight/filter'));
   if (!page) {
     page = await browser.newPage();
-    await page.goto('https://vip.oalur.com/insight/filter/index?site=US', { waitUntil: 'networkidle2', timeout: 30000 });
+    await gotoOalurFilter(page, 'initial page');
   }
   console.log('✅ 已连接 Edge');
 
@@ -347,7 +361,7 @@ async function extractKeyword(page, keyword) {
     // 每个关键词重新加载页面，确保搜索独立
     if (i > 0) {
       console.log(`\n🔄 加载新页面...`);
-      await page.goto('https://vip.oalur.com/insight/filter/index?site=US', { waitUntil: 'networkidle2', timeout: 30000 });
+      await gotoOalurFilter(page, `keyword ${kw}`);
       await new Promise(r => setTimeout(r, 3000));
     }
     const kwData = await extractKeyword(page, kw);

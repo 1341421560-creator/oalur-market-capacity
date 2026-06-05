@@ -110,8 +110,6 @@
   </div>
 </div>
 
-{{PROFIT_BLOCK}}
-
 <!-- BSR 分布 -->
 <div class="card">
   <h2>📈 BSR 区间分布</h2>
@@ -145,6 +143,9 @@
   </ol>
   <div class="conclusion {{CONCLUSION_CLASS}}">{{CONCLUSION}}<br><small>{{REASON}}</small></div>
 </div>
+
+<h1 style="margin-top:32px;">💵 利润快筛</h1>
+{{PROFIT_BLOCK}}
 
 <!-- ==================== 市场竞争分析 ==================== -->
 <h1 style="margin-top:32px;">⚔️ 市场竞争分析</h1>
@@ -306,6 +307,7 @@
 
 {{COMP_STANDARDS_REF}}
 
+<h1 style="margin-top:32px;">🌱 新品存活率</h1>
 {{SURVIVAL_HTML}}
 
 <!-- 新品销量分析（<6个月） -->
@@ -354,11 +356,18 @@
     <tr><th>#</th><th>ASIN</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
     {{UNDER12M_ROWS}}
   </table>
+</div>
+
+<h1 style="margin-top:32px;">🌀 季节性与市场趋势分析</h1>
 {{SEASONALITY_BLOCK}}
 {{LIFECYCLE_BLOCK}}
+
+<h1 style="margin-top:32px;">📎 附录</h1>
 {{KNOWLEDGE_AUDIT_BLOCK}}
 
-<!-- 排除的产品 -->
+<!-- 过滤的 ASIN -->
+<div class="card">
+  <h2>过滤的 ASIN（排除项）</h2>
   <div class="scroll-table">
     <table>
       <tr><th>#</th><th>ASIN</th><th>产品名称</th><th>类目</th></tr>
@@ -367,9 +376,9 @@
   </div>
 </div>
 
-<!-- 产品明细 -->
+<!-- 过滤后的 ASIN -->
 <div class="card">
-  <h2>📋 全部 {{FILTERED_COUNT}} 个产品明细（按 BSR 排序，{{TIME_RANGE}}）</h2>
+  <h2>过滤后的 ASIN（{{FILTERED_COUNT}} 个，按 BSR 排序，{{TIME_RANGE}}）</h2>
   <div class="scroll-table">
     <table>
       <tr><th>#</th><th>产品名称</th><th>ASIN</th><th>销量</th><th>BSR</th><th>小类排名</th><th>价格</th><th>上架时间</th><th>评论数</th><th>品牌</th></tr>

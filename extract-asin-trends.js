@@ -1,28 +1,39 @@
-/**
- * Oalur ASIN 数据趋势提取 + 价格排名趋势导出（合并版）
- * 
- * 流程（多标签页并行）：
- * 1. 为每个 ASIN 打开新标签页 → 搜索 ASIN → 点击"数据趋势"
- * 2. 提取月度销量/销售额数据（阶段四）
- * 3. 不关弹窗 → 切换到"价格&排名趋势"tab → 点击"导出"（阶段五）
- * 4. 重命名导出的 Excel（加 ASIN 前缀）
- * 5. 关闭弹窗和标签页
- * 
- * 用法: node extract-asin-trends.js "ASIN1,ASIN2,..." [输出文件.json]
- * 示例: node extract-asin-trends.js "B074W66D85,B083QLRBLK" output/日期-B074W66D85-B083QLRBLK/data/trends.json
+﻿/**
+ * Extract Oalur ASIN trends.
+ *
+ * Default mode reads each ASIN tab's own XHR responses directly:
+ * - basicInfo
+ * - dataTrends
+ * - keepaTrends
+ * - bsrTrends
+ *
+ * This avoids Excel download pairing issues. Use --excel only as an explicit fallback.
  */
 
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
+const OALUR_ASIN_SEARCH_URL = 'https://vip.oalur.com/insight/product/search?site=US';
+const OALUR_NAV_TIMEOUT_MS = 30000;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function todayString() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function safeSegment(value) {
-  return String(value || 'output').trim().toLowerCase().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
+  return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
 }
 
 function outputDirs(taskName) {
-  const date = new Date().toISOString().split('T')[0];
+  const date = todayString();
   const root = path.join(process.cwd(), 'output', `${date}-${safeSegment(taskName)}`);
   return {
     root,
@@ -32,228 +43,449 @@ function outputDirs(taskName) {
   };
 }
 
+function outputDirsFromOutFile(outFile, fallbackTaskName) {
+  if (!outFile) return outputDirs(fallbackTaskName);
+  const outDir = path.dirname(path.normalize(outFile));
+  if (path.basename(outDir).toLowerCase() === 'data') {
+    const root = path.dirname(outDir);
+    return {
+      root,
+      data: path.join(root, 'data'),
+      reports: path.join(root, 'reports'),
+      excel: path.join(root, 'excel')
+    };
+  }
+  return outputDirs(fallbackTaskName);
+}
+
 const asinArg = process.argv[2];
-const taskName = asinArg ? asinArg.split(',').slice(0, 3).join('-') : 'asin-trends';
-const dirs = outputDirs(taskName);
-const outFile = process.argv[3] || path.join(dirs.data, 'asin-trends.json');
-fs.mkdirSync(path.dirname(outFile), { recursive: true });
+const requestedOutFile = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : null;
+const useExcelFallback = process.argv.includes('--excel');
+const reportOnly = process.argv.includes('--report-only');
 
 if (!asinArg) {
-  console.error('用法: node extract-asin-trends.js "ASIN1,ASIN2,..." [输出文件.json]');
+  console.error('Usage: node extract-asin-trends.js "ASIN1,ASIN2,..." [output.json] [--excel]');
   process.exit(1);
 }
 
 const asins = asinArg.split(',').map(s => s.trim()).filter(Boolean);
+const taskName = asins.slice(0, 3).join('-') || 'asin-trends';
+const dirs = outputDirsFromOutFile(requestedOutFile, taskName);
+const outFile = requestedOutFile || path.join(dirs.data, 'asin-trends.json');
 const DOWNLOAD_DIR = process.env.OALUR_DOWNLOAD_DIR || dirs.excel;
+const BROWSER_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
+
+fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
-// 全局已认领文件集（避免并行 ASIN 抢夺彼此的文件）
-const claimedFiles = new Set();
-
-// 获取 excel 输出目录中的所有价格排名趋势 Excel 文件
-function getExportFiles() {
-  return fs.readdirSync(DOWNLOAD_DIR)
-    .filter(f => f.startsWith('价格&排名趋势') && f.endsWith('.xlsx'))
-    .map(f => ({ name: f, mtime: fs.statSync(path.join(DOWNLOAD_DIR, f)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
+async function gotoOalurAsinSearch(page, asin) {
+  try {
+    await page.goto(OALUR_ASIN_SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
+  } catch (error) {
+    if (String(error?.message || '').toLowerCase().includes('timeout')) {
+      console.error(`ERROR: ASIN ${asin} navigation timed out after 30s. Stop this ASIN and report to user.`);
+    }
+    throw error;
+  }
 }
 
-async function extractAndExport(browser, asin, index, total) {
+function relPath(filePath) {
+  return path.relative(process.cwd(), filePath) || '.';
+}
+
+function reportPrefixFromRoot(root) {
+  return path.basename(root).replace(/^\d{4}-\d{2}-\d{2}-/, '') || taskName;
+}
+
+function parseNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(String(value).replace(/[$,#,\s]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function pairSeries(dates = [], values = [], key) {
+  const out = [];
+  for (let i = 0; i < Math.min(dates.length, values.length); i++) {
+    const value = parseNumber(values[i]);
+    if (value === null || value <= 0) continue;
+    out.push({ date: dates[i], [key]: value });
+  }
+  return out;
+}
+
+function extractMainBsr(bsrData) {
+  const history = bsrData?.bsrAllHistory || {};
+  const dates = history.dates || [];
+  const topId = bsrData?.top?.[0]?.categoryId;
+  if (!topId || !Array.isArray(history[topId])) return [];
+  return pairSeries(dates, history[topId], 'mainBsr');
+}
+
+function normalizeMonthlyTrend(data) {
+  const months = data?.dates || [];
+  const monthlySales = data?.saleVolume || [];
+  const monthlyRevenue = data?.salesNumber || [];
+  if (!months.length) return null;
+  return { months, monthlySales, monthlyRevenue, avgPrice: [] };
+}
+
+function lifecycleFromSeries(asin, product, directTrendData) {
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 4);
+  cutoff.setDate(3);
+  const cutoffStr = cutoff.toISOString().substring(0, 10);
+
+  const priceData = (directTrendData?.priceData || []).filter(d => d.date >= cutoffStr && d.buyboxPrice != null);
+  const ratingsData = (directTrendData?.ratingsData || []).filter(d => d.date >= cutoffStr && d.ratingsNum != null);
+  const bsrData = (directTrendData?.bsrData || []).filter(d => d.date >= cutoffStr && d.mainBsr != null);
+
+  if (!priceData.length) return null;
+
+  const firstP = priceData[0];
+  const lastP = priceData[priceData.length - 1];
+  const firstR = ratingsData[0] || null;
+  const lastR = ratingsData[ratingsData.length - 1] || null;
+  const firstB = bsrData[0] || null;
+  const lastB = bsrData[bsrData.length - 1] || null;
+
+  const prices = priceData.map(d => d.buyboxPrice);
+  const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+  const maxPrice = Math.max(...prices);
+  const minPrice = Math.min(...prices);
+
+  const bsrs = bsrData.map(d => d.mainBsr);
+  const minBsr = bsrs.length ? Math.min(...bsrs) : 0;
+  const maxBsr = bsrs.length ? Math.max(...bsrs) : 0;
+
+  const ratingIncrease = firstR && lastR ? lastR.ratingsNum - firstR.ratingsNum : 0;
+  const daysDiff = priceData.length;
+  const ratingPerMonth = daysDiff > 0 ? (ratingIncrease / (daysDiff / 30)).toFixed(1) : '0';
+
+  const mid = Math.floor(priceData.length / 2);
+  const firstHalf = priceData.slice(0, mid);
+  const secondHalf = priceData.slice(-mid);
+  const avgPriceFirst = firstHalf.reduce((s, d) => s + d.buyboxPrice, 0) / Math.max(1, firstHalf.length);
+  const avgPriceSecond = secondHalf.reduce((s, d) => s + d.buyboxPrice, 0) / Math.max(1, secondHalf.length);
+
+  const bsrMid = Math.floor(bsrData.length / 2);
+  const avgBsrFirst = bsrMid > 0 ? bsrData.slice(0, bsrMid).reduce((s, d) => s + d.mainBsr, 0) / bsrMid : 0;
+  const avgBsrSecond = bsrMid > 0 ? bsrData.slice(-bsrMid).reduce((s, d) => s + d.mainBsr, 0) / bsrMid : 0;
+
+  const ratingMid = Math.floor(ratingsData.length / 2);
+  const growthFirst = ratingMid >= 2
+    ? (ratingsData[ratingMid - 1].ratingsNum - ratingsData[0].ratingsNum) / Math.max(1, ratingMid / 30)
+    : 0;
+  const growthLast = ratingsData.length - ratingMid >= 2
+    ? (ratingsData[ratingsData.length - 1].ratingsNum - ratingsData[ratingMid].ratingsNum) / Math.max(1, (ratingsData.length - ratingMid) / 30)
+    : 0;
+
+  const priceDown = avgPriceSecond < avgPriceFirst * 0.93;
+  const bsrUp = avgBsrFirst > 0 && avgBsrSecond > avgBsrFirst * 1.15;
+
+  let lifecycle = '健康成熟';
+  let cls = 'pass';
+  if (priceDown && bsrUp) { lifecycle = '衰退期'; cls = 'fail'; }
+  else if (priceDown) { lifecycle = '成熟后期'; cls = 'caution'; }
+  else if (bsrUp) { lifecycle = '排名下滑'; cls = 'caution'; }
+  else if (growthLast < growthFirst * 0.5 && growthFirst > 0) { lifecycle = '成熟期'; cls = 'pass'; }
+  return {
+    asin,
+    title: product.title || '',
+    brand: product.brand || '',
+    priceData,
+    ratingsData,
+    bsrData,
+    firstP, lastP, firstR, lastR, firstB, lastB,
+    avgPrice, maxPrice, minPrice,
+    minBsr, maxBsr,
+    ratingIncrease,
+    ratingPerMonth,
+    lifecycle,
+    cls,
+    avgPriceFirst, avgPriceSecond,
+    avgBsrFirst, avgBsrSecond,
+    growthFirst, growthLast
+  };
+}
+
+async function navigateAndOpenTrends(page, asin) {
+  await gotoOalurAsinSearch(page, asin);
+  await sleep(3000);
+
+  await page.evaluate((value) => {
+    const input =
+      document.querySelector('input[placeholder*="2000"]') ||
+      document.querySelector('input[placeholder*="支持"]');
+    if (!input) return;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, '');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, asin);
+  await sleep(500);
+
+  await page.evaluate(() => {
+    for (const button of document.querySelectorAll('button')) {
+      if (button.innerText.trim() === '立即查询') {
+        button.click();
+        return;
+      }
+    }
+  });
+  await sleep(6000);
+
+  await page.evaluate(() => {
+    for (const button of document.querySelectorAll('button')) {
+      if (button.innerText.trim() === '数据趋势') {
+        button.click();
+        return;
+      }
+    }
+  });
+  await sleep(8000);
+
+  await page.evaluate(() => {
+    const dialog = document.querySelector('.el-dialog');
+    if (!dialog) return;
+    for (const item of dialog.querySelectorAll('.el-tabs__item')) {
+      if (item.innerText.trim() === '价格&排名趋势') {
+        item.click();
+        return;
+      }
+    }
+  });
+}
+
+async function extractDirect(browser, asin, index, total) {
   const page = await browser.newPage();
+  const state = { basicInfo: null, salesTrend: null, keepaTrend: null, bsrTrend: null };
+
+  page.on('response', async response => {
+    const url = response.url();
+    if (!url.includes(asin)) return;
+    if (!/basicInfo|dataTrends|keepaTrends|bsrTrends/.test(url)) return;
+    try {
+      const json = JSON.parse(await response.text());
+      if (url.includes('basicInfo')) state.basicInfo = json.data;
+      if (url.includes('type=SALES_VOLUME')) state.salesTrend = json.data;
+      if (url.includes('keepaTrends')) state.keepaTrend = json.data;
+      if (url.includes('bsrTrends')) state.bsrTrend = json.data;
+    } catch {}
+  });
+
+  console.log(`\n[${index + 1}/${total}] ASIN ${asin}: direct XHR read`);
   try {
-    const client = await page.target().createCDPSession();
-    await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR }).catch(() => {});
-    console.log(`\n📊 [${index + 1}/${total}] ASIN: ${asin}`);
-    
-    // ─── 阶段四：提取销量数据 ───
-    await page.goto('https://vip.oalur.com/insight/product/search?site=US', { waitUntil: 'networkidle2', timeout: 30000 });
-    await new Promise(r => setTimeout(r, 3000));
-
-    await page.evaluate((asin) => {
-      const input = document.querySelector('input[placeholder*="2000"]') ||
-                    document.querySelector('input[placeholder*="支持"]');
-      if (input) {
-        const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        s.call(input, '');
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        s.call(input, asin);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    }, asin);
-    await new Promise(r => setTimeout(r, 500));
-    await page.evaluate(() => {
-      for (const btn of document.querySelectorAll('button'))
-        if (btn.innerText.trim() === '立即查询') { btn.click(); return; }
-    });
-    await new Promise(r => setTimeout(r, 6000));
-
-    const basicInfo = await page.evaluate(() => {
-      const body = document.body.innerText;
-      const asinMatch = body.match(/ASIN[：:]\s*([A-Z0-9]{10})/);
-      const brandMatch = body.match(/品牌[：:]\s*([^\n]+)/);
-      const titleEl = document.querySelector('.el-table__body tr td:nth-child(2)');
-      return {
-        asin: asinMatch?.[1] || '',
-        title: (titleEl?.innerText?.split('\n')[0] || '').substring(0, 120),
-        brand: brandMatch?.[1]?.trim() || ''
-      };
-    });
-
-    console.log(`  [${index + 1}/${total}] 📈 打开数据趋势...`);
-    await page.evaluate(() => {
-      for (const btn of document.querySelectorAll('button'))
-        if (btn.innerText.trim() === '数据趋势') { btn.click(); return; }
-    });
-    await new Promise(r => setTimeout(r, 8000));
-
-    // 提取月度销量/销售额
-    const trendData = await page.evaluate(() => {
-      const dialog = document.querySelector('.el-dialog');
-      if (!dialog) return null;
-      const result = { months: [], monthlySales: [], monthlyRevenue: [], avgPrice: [] };
-      const totalMatch = dialog.innerText.match(/全部\s*\(?\s*(\d+)\s*个月/);
-      result.totalMonths = totalMatch ? parseInt(totalMatch[1]) : 0;
-      const rows = dialog.querySelectorAll('table tr, .el-table__body tr');
-      rows.forEach(row => {
-        const cells = row.querySelectorAll('td, th');
-        if (cells.length < 2) return;
-        const fc = cells[0]?.innerText?.trim() || '';
-        if (fc === '月份' || (!fc && cells[1]?.innerText?.match(/\d{4}/))) {
-          for (let i = 1; i < cells.length; i++) {
-            const m = cells[i]?.innerText?.trim() || '';
-            if (m && /\d{4}/.test(m)) result.months.push(m);
-          }
-        }
-        if (fc === '月销量') {
-          for (let i = 1; i < cells.length; i++) {
-            const v = cells[i]?.innerText?.trim() || '';
-            if (v) result.monthlySales.push(v);
-          }
-        }
-        if (fc === '月销售额') {
-          for (let i = 1; i < cells.length; i++) {
-            const v = cells[i]?.innerText?.trim() || '';
-            if (v) result.monthlyRevenue.push(v);
-          }
-        }
-      });
-      return result;
-    });
-
-    const hasData = trendData && trendData.monthlySales.length > 0;
-    console.log(`  [${index + 1}/${total}] ${hasData ? '✅' : '⚠️'} 销量趋势: ${hasData ? trendData.monthlySales.length + ' 个月' : '暂无数据'}`);
-
-    // ─── 阶段五：导出价格排名趋势 ───
-    console.log(`  [${index + 1}/${total}] 🔄 切换到价格&排名趋势...`);
-    
-    const tabClicked = await page.evaluate(() => {
-      const dialog = document.querySelector('.el-dialog');
-      if (!dialog) return false;
-      for (const item of dialog.querySelectorAll('.el-tabs__item')) {
-        if (item.innerText?.trim() === '价格&排名趋势') {
-          item.click();
-          return true;
-        }
-      }
-      return false;
-    });
-    
-    if (tabClicked) {
-      await new Promise(r => setTimeout(r, 6000)); // 等待图表加载
-      
-      console.log(`  [${index + 1}/${total}] 📥 点击导出...`);
-      await page.evaluate(() => {
-        for (const btn of document.querySelectorAll('button')) {
-          if (btn.innerText?.trim() === '导出') { btn.click(); return; }
-        }
-      });
-      
-      // 等待下载完成
-      await new Promise(r => setTimeout(r, 4000 + Math.random() * 3000));
-      
-      // 找到新下载的文件并认领 + 重命名（全局 claimedFiles 防止并行 ASIN 互相抢文件）
-      let newFile, renameRetry = 0;
-      let afterFiles = [];
-      while (renameRetry < 8) {
-        afterFiles = getExportFiles();
-        newFile = afterFiles.find(f => !claimedFiles.has(f.name) && !/_B0[A-Z0-9]{8}_/.test(f.name));
-        if (newFile) {
-          claimedFiles.add(newFile.name);
-          break;
-        }
-        await new Promise(r => setTimeout(r, 2000));
-        renameRetry++;
-      }
-      if (newFile) {
-        const oldPath = path.join(DOWNLOAD_DIR, newFile.name);
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-        const newName = `价格&排名趋势_${asin}_${timestamp}.xlsx`;
-        const newPath = path.join(DOWNLOAD_DIR, newName);
-        try {
-          fs.renameSync(oldPath, newPath);
-          console.log(`  [${index + 1}/${total}] ✅ 导出文件: ${newName}`);
-        } catch (e) {
-          console.log(`  [${index + 1}/${total}] ⚠️ 重命名失败: ${e.message}，文件保留为 ${newFile.name}`);
-        }
-      } else {
-        console.log(`  [${index + 1}/${total}] ⚠️ 未检测到新导出文件（可能已被其他标签页下载）`);
-        // 尝试匹配时间最近的文件
-        const recentUnknown = afterFiles.filter(f => !beforeFiles.has(f.name));
-        if (recentUnknown.length > 0) {
-          console.log(`  [${index + 1}/${total}]   候选文件: ${recentUnknown.map(f => f.name).join(', ')}`);
-        }
-      }
-    } else {
-      console.log(`  [${index + 1}/${total}] ⚠️ 未找到价格&排名趋势 tab`);
+    await navigateAndOpenTrends(page, asin);
+    for (let i = 0; i < 20; i++) {
+      if (state.keepaTrend && state.bsrTrend && state.salesTrend) break;
+      await sleep(1000);
     }
 
-    // 关闭弹窗
-    await page.evaluate(() => {
-      const cb = document.querySelector('.el-dialog__headerbtn, .el-dialog [aria-label*="Close"]');
-      if (cb) cb.click();
-    });
-    await new Promise(r => setTimeout(r, 1500));
-
-    return {
-      asin: basicInfo.asin || asin,
-      title: basicInfo.title,
-      brand: basicInfo.brand,
-      trendData: hasData ? trendData : null,
-      totalMonths: trendData?.totalMonths || 0
+    const keepaDates = state.keepaTrend?.dates || [];
+    const directTrendData = {
+      priceData: pairSeries(keepaDates, state.keepaTrend?.price || [], 'buyboxPrice'),
+      ratingsData: pairSeries(keepaDates, state.keepaTrend?.ratingNum || [], 'ratingsNum'),
+      bsrData: extractMainBsr(state.bsrTrend)
     };
+    const trendData = normalizeMonthlyTrend(state.salesTrend);
+    const product = {
+      asin,
+      title: state.basicInfo?.title || state.basicInfo?.name || '',
+      brand: state.basicInfo?.brand || '',
+      trendData,
+      directTrendData,
+      totalMonths: trendData?.months?.length || 0,
+      extractionMode: 'xhr'
+    };
+
+    console.log(`  price=${directTrendData.priceData.length}, ratings=${directTrendData.ratingsData.length}, bsr=${directTrendData.bsrData.length}, salesMonths=${product.totalMonths}`);
+    return product;
   } finally {
     await page.close().catch(() => {});
   }
 }
 
+function trendRows(item) {
+  const byDate = new Map();
+  for (const p of item.priceData) byDate.set(p.date, { date: p.date, price: p.buyboxPrice });
+  for (const r of item.ratingsData) byDate.set(r.date, { ...(byDate.get(r.date) || { date: r.date }), ratings: r.ratingsNum });
+  for (const b of item.bsrData) byDate.set(b.date, { ...(byDate.get(b.date) || { date: b.date }), bsr: b.mainBsr });
+  return [...byDate.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-500)
+    .map(row => `<tr><td>${row.date}</td><td>${row.price == null ? '-' : '$' + Number(row.price).toFixed(2)}</td><td>${row.ratings == null ? '-' : Number(row.ratings).toLocaleString()}</td><td>${row.bsr == null ? '-' : '#' + Number(row.bsr).toLocaleString()}</td></tr>`)
+    .join('\n');
+}
+
+function generateDirectLifecycleReport(lifecycleItems, lifecycleJsonPath) {
+  const today = todayString();
+  const filePrefix = reportPrefixFromRoot(dirs.root);
+  const reportPath = path.join(dirs.reports, `${today}_${filePrefix}_ASIN生命周期趋势分析.html`);
+  fs.mkdirSync(dirs.reports, { recursive: true });
+
+  const summaryRows = lifecycleItems.map(d => `<tr>
+    <td><a href="https://www.amazon.com/dp/${d.asin}" target="_blank">${d.asin}</a></td>
+    <td>$${d.firstP.buyboxPrice.toFixed(2)} → $${d.lastP.buyboxPrice.toFixed(2)}</td>
+    <td>${d.firstB ? '#' + d.firstB.mainBsr.toLocaleString() : '-'} → ${d.lastB ? '#' + d.lastB.mainBsr.toLocaleString() : '-'}</td>
+    <td>${d.firstR ? d.firstR.ratingsNum.toLocaleString() : '-'} → ${d.lastR ? d.lastR.ratingsNum.toLocaleString() : '-'}</td>
+    <td class="${d.cls}">${d.lifecycle}</td>
+  </tr>`).join('\n');
+
+  const cards = lifecycleItems.map((d, idx) => `<section class="card">
+    <h2>${d.asin} <span class="${d.cls}">${d.lifecycle}</span></h2>
+    <div class="metrics">
+      <div><b>$${d.lastP.buyboxPrice.toFixed(2)}</b><span>当前价格</span></div>
+      <div><b>${d.lastR ? d.lastR.ratingsNum.toLocaleString() : '-'}</b><span>Ratings</span></div>
+      <div><b>${d.lastB ? '#' + d.lastB.mainBsr.toLocaleString() : '-'}</b><span>大类 BSR</span></div>
+    </div>
+    <div class="charts">
+      <div class="chart-card"><h3>Buybox 价格日趋势</h3><canvas id="price${idx}"></canvas></div>
+      <div class="chart-card"><h3>Ratings 日趋势</h3><canvas id="ratings${idx}"></canvas></div>
+      <div class="chart-card"><h3>大类 BSR 日趋势</h3><canvas id="bsr${idx}"></canvas></div>
+    </div>
+    <details><summary>查看 ${d.asin} 明细数据表（价格 / Ratings / 大类 BSR）</summary>
+      <table><tr><th>日期</th><th>Buybox 价格</th><th>Ratings</th><th>大类 BSR</th></tr>${trendRows(d)}</table>
+    </details>
+  </section>`).join('\n');
+
+  const chartJs = lifecycleItems.map((d, idx) => `
+    renderLineChart('price${idx}', 'Buybox 价格 ($)', ${JSON.stringify(d.priceData.map(p => ({ x: p.date, y: p.buyboxPrice })))}, '#1677ff', false);
+    renderLineChart('ratings${idx}', 'Ratings', ${JSON.stringify(d.ratingsData.map(r => ({ x: r.date, y: r.ratingsNum })))}, '#16a34a', false);
+    renderLineChart('bsr${idx}', '大类 BSR', ${JSON.stringify(d.bsrData.map(b => ({ x: b.date, y: b.mainBsr })))}, '#7c3aed', true);
+  `).join('\n');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${filePrefix} ASIN 生命周期趋势分析</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+  <style>
+    body{font-family:Arial,"Microsoft YaHei",sans-serif;background:#f5f7fb;color:#222;margin:0;padding:24px}
+    h1{margin:0 0 16px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px;margin:16px 0}
+    h2{margin:0 0 12px}h3{font-size:14px;margin:0 0 10px;color:#334155}
+    table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f8fafc}
+    .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}.metrics div{background:#f8fafc;border-radius:6px;padding:10px}.metrics span{display:block;color:#666;font-size:12px;margin-top:4px}
+    .charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.chart-card{border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:#fff}.chart-card canvas{width:100%!important;height:240px!important}
+    .pass{color:#15803d;font-weight:700}.caution{color:#b45309;font-weight:700}.fail{color:#b91c1c;font-weight:700}
+    details{margin-top:12px;max-height:420px;overflow:auto}
+    @media (max-width: 980px){.charts,.metrics{grid-template-columns:1fr}}
+  </style></head><body>
+  <h1>ASIN 价格 & 排名生命周期趋势分析</h1>
+  <p>数据来源：Oalur 当前页面 XHR 直读（keepaTrends / bsrTrends / dataTrends），未导出 Excel。生命周期摘要：${relPath(lifecycleJsonPath)}</p>
+  <section class="card"><h2>汇总</h2><table><tr><th>ASIN</th><th>价格变化</th><th>大类 BSR 变化</th><th>Ratings 变化</th><th>生命周期</th></tr>${summaryRows}</table></section>
+  <section class="card"><h2>知识库生命周期判定标准</h2>
+    <p>1. 价格后半段低于前半段 7% 以上：价格下行，可能进入成熟后期或衰退期。</p>
+    <p>2. 大类 BSR 后半段高于前半段 15% 以上：大类排名下滑，竞争力下降；大类 BSR 缺失时不参与该项统计。</p>
+    <p>3. Ratings 月增速显著放缓：成熟期后段信号。</p>
+  </section>
+  ${cards}
+  <script>
+    function renderLineChart(id, label, data, color, reverseY) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      new Chart(el, {
+        type: 'line',
+        data: { datasets: [{ label, data, borderColor: color, backgroundColor: color + '22', pointRadius: 0, borderWidth: 1.8, tension: 0.25, fill: false }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: true, labels: { boxWidth: 12 } } },
+          scales: {
+            x: { type: 'time', time: { unit: 'month' }, ticks: { maxRotation: 0 } },
+            y: { reverse: reverseY, beginAtZero: false }
+          }
+        }
+      });
+    }
+    ${chartJs}
+  </script></body></html>`;
+  fs.writeFileSync(reportPath, html, 'utf-8');
+  console.log(`Direct lifecycle report saved: ${relPath(reportPath)}`);
+}
+function saveLifecycle(products) {
+  const lifecycleItems = products
+    .map(p => lifecycleFromSeries(p.asin, p, p.directTrendData))
+    .filter(Boolean);
+  const lifecycleJsonPath = outFile.endsWith('-asin-trends.json')
+    ? outFile.replace(/-asin-trends\.json$/, '-asin-lifecycle.json')
+    : path.join(path.dirname(outFile), 'asin-lifecycle.json');
+  const lifecycleSummary = lifecycleItems.map(d => ({
+    asin: d.asin,
+    lifecycle: d.lifecycle,
+    lifecycleClass: d.cls,
+    priceFirst: d.firstP.buyboxPrice,
+    priceLast: d.lastP.buyboxPrice,
+    priceMax: d.maxPrice,
+    priceMin: d.minPrice,
+    bsrFirst: d.firstB?.mainBsr || 0,
+    bsrLast: d.lastB?.mainBsr || 0,
+    bsrBest: d.minBsr,
+    ratingsFirst: d.firstR?.ratingsNum || 0,
+    ratingsLast: d.lastR?.ratingsNum || 0,
+    ratingPerMonth: d.ratingPerMonth,
+    avgPriceFirst: d.avgPriceFirst,
+    avgPriceSecond: d.avgPriceSecond,
+    avgBsrFirst: Math.round(d.avgBsrFirst),
+    avgBsrSecond: Math.round(d.avgBsrSecond)
+  }));
+  fs.writeFileSync(lifecycleJsonPath, JSON.stringify({ asins, analyzedAt: new Date().toISOString(), mode: 'xhr', products: lifecycleSummary }, null, 2), 'utf-8');
+  generateDirectLifecycleReport(lifecycleItems, lifecycleJsonPath);
+  console.log(`Lifecycle summary saved: ${relPath(lifecycleJsonPath)} | ${lifecycleSummary.length} ASIN`);
+}
+
+function runExcelFallback() {
+  const combinedScript = path.join(__dirname, 'generate-asin-trends-combined.js');
+  const lifecycleJsonPath = outFile.endsWith('-asin-trends.json')
+    ? outFile.replace(/-asin-trends\.json$/, '-asin-lifecycle.json')
+    : path.join(path.dirname(outFile), 'asin-lifecycle.json');
+  if (!fs.existsSync(combinedScript)) return;
+  const reportPrefix = reportPrefixFromRoot(dirs.root);
+  execSync(
+    `node "${combinedScript}" "${asinArg}" "${reportPrefix}" --json-out "${lifecycleJsonPath}"`,
+    { stdio: 'inherit', timeout: 60000, env: { ...process.env, OALUR_DOWNLOAD_DIR: DOWNLOAD_DIR } }
+  );
+}
+
 (async () => {
-  console.log(`\n${'='.repeat(40)}`);
-  console.log(`📊 ASIN 数据趋势提取 + 价格排名导出: ${asins.length} 个 ASIN`);
-  console.log('='.repeat(40));
+  console.log(`\n${'='.repeat(50)}`);
+  console.log(`ASIN trend extraction: ${asins.length} ASIN | mode=${useExcelFallback ? 'excel-fallback' : 'xhr-direct'}`);
+  console.log('='.repeat(50));
+  console.log(`Output JSON: ${relPath(outFile)}`);
+
+  if (reportOnly) {
+    if (!fs.existsSync(outFile)) {
+      throw new Error(`Report-only mode requires existing trend JSON: ${relPath(outFile)}`);
+    }
+    const existing = JSON.parse(fs.readFileSync(outFile, 'utf-8'));
+    saveLifecycle(existing.products || []);
+    return;
+  }
+
+  if (useExcelFallback) {
+    console.log(`Excel fallback requested. Excel dir: ${relPath(DOWNLOAD_DIR)}`);
+    runExcelFallback();
+    return;
+  }
 
   const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
+  let results = await Promise.all(asins.map((asin, i) => new Promise(async resolve => {
+    await sleep(i * 1000);
+    resolve(await extractDirect(browser, asin, i, asins.length));
+  })));
 
-  // 多标签页并行（错峰 1 秒启动）
-  console.log(`📑 打开 ${asins.length} 个并行标签页（错峰启动）...`);
-  const promises = asins.map((asin, i) => new Promise(async (resolve) => {
-    await new Promise(r => setTimeout(r, i * 1000));
-    const result = await extractAndExport(browser, asin, i, asins.length);
-    resolve(result);
-  }));
-  let results = await Promise.all(promises);
+  const failed = results.filter(product =>
+    !product.trendData ||
+    !product.directTrendData?.priceData?.length ||
+    !product.directTrendData?.ratingsData?.length ||
+    !product.directTrendData?.bsrData?.length
+  );
 
-  // 重试失败的 ASIN
-  const failed = results.filter(r => !r.trendData);
-  if (failed.length > 0) {
-    console.log(`\n🔄 ${failed.length} 个 ASIN 无销量数据，逐一重试...`);
-    for (const f of failed) {
-      const idx = asins.indexOf(f.asin);
-      if (idx > -1) {
-        console.log(`\n🔁 重试: ${f.asin}`);
-        const retryResult = await extractAndExport(browser, f.asin, idx + 0.5, asins.length);
-        results[idx] = retryResult;
-      }
+  if (failed.length) {
+    console.log(`\nRetry ${failed.length} ASIN with incomplete direct data...`);
+    for (const product of failed) {
+      const idx = asins.indexOf(product.asin);
+      if (idx < 0) continue;
+      results[idx] = await extractDirect(browser, product.asin, idx + 0.5, asins.length);
     }
   }
 
@@ -262,38 +494,17 @@ async function extractAndExport(browser, asin, index, total) {
   const output = {
     asins,
     extractedAt: new Date().toISOString(),
+    mode: 'xhr',
     products: results
   };
-  fs.writeFileSync(outFile, JSON.stringify(output, null, 2));
-  
-  console.log(`\n✅ 数据已保存: ${outFile}`);
-  console.log(`📊 销量数据: ${results.filter(r => r.trendData).length}/${results.length} 个`);
-  
-  // 列出导出的 Excel 文件
-  const finalFiles = getExportFiles();
-  const withAsin = finalFiles.filter(f => /\d{4}-\d{2}-\d{2}T/.test(f.name));
-  console.log(`📥 价格排名导出: ${withAsin.length} 个 Excel`);
-  withAsin.forEach(f => console.log(`   ${f.name}`));
+  fs.writeFileSync(outFile, JSON.stringify(output, null, 2), 'utf-8');
+  console.log(`\nData saved: ${relPath(outFile)}`);
+  console.log(`Direct trends: ${results.filter(p => p.directTrendData?.priceData?.length && p.directTrendData?.bsrData?.length).length}/${results.length} ASIN`);
+  console.log(`Sales trends: ${results.filter(p => p.trendData?.months?.length).length}/${results.length} ASIN`);
 
-  // 生成合并 ASIN 趋势图 HTML
-  const combinedScript = path.join(__dirname, 'generate-asin-trends-combined.js');
-  const lifecycleJsonPath = outFile.endsWith('-asin-trends.json')
-    ? outFile.replace(/-asin-trends\.json$/, '-asin-lifecycle.json')
-    : path.join(path.dirname(outFile), 'asin-lifecycle.json');
-  if (fs.existsSync(combinedScript)) {
-    console.log(`\n📊 生成合并 ASIN 趋势报告...`);
-    try {
-      execSync(
-        `node "${combinedScript}" "${asinArg}" --json-out "${lifecycleJsonPath}"`,
-        { stdio: 'inherit', timeout: 60000 }
-      );
-    } catch (e) {
-      console.log(`⚠️ 合并趋势报告生成失败: ${e.message.substring(0, 80)}`);
-    }
-  } else {
-    console.log(`⚠️ 未找到 generate-asin-trends-combined.js，跳过趋势报告生成`);
-  }
-})().catch(err => {
-  console.error('❌ Error:', err.message);
+  saveLifecycle(results);
+})().catch(error => {
+  console.error('Error:', error.message);
   process.exit(1);
 });
+

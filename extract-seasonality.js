@@ -31,9 +31,24 @@ const SKILL_DIR = __dirname;
 const keyword = process.argv[2];
 const bsrDataFile = process.argv[3];
 const safeName = safeSegment(keyword || 'output');
-const dirs = outputDirs(keyword || 'output');
+const defaultDirs = outputDirs(keyword || 'output');
+const outFile = process.argv[4] || path.join(defaultDirs.data, safeName + '-seasonality.json');
+const dirs = process.argv[4]
+  ? (() => {
+      const dataDir = path.resolve(path.dirname(outFile));
+      const root = path.basename(dataDir).toLowerCase() === 'data'
+        ? path.dirname(dataDir)
+        : dataDir;
+      return {
+        root,
+        data: dataDir,
+        reports: path.join(root, 'reports'),
+        excel: path.join(root, 'excel'),
+        cache: path.join(root, 'cache')
+      };
+    })()
+  : defaultDirs;
 fs.mkdirSync(dirs.data, { recursive: true });
-const outFile = process.argv[4] || path.join(dirs.data, safeName + '-seasonality.json');
 
 if (!keyword) {
   console.error('用法: node extract-seasonality.js "关键词" <BSR数据文件.json> [输出文件.json]');
@@ -353,7 +368,7 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
         try {
           execSync(
             `node "${path.join(SKILL_DIR, 'extract-asin-trends.js')}" "${asinList}" "${asinTrendsFile}"`,
-            { stdio: 'inherit', timeout: 300000 }
+            { stdio: 'inherit', timeout: 240000 }
           );
           if (fs.existsSync(asinTrendsFile)) {
             asinTrends = JSON.parse(fs.readFileSync(asinTrendsFile, 'utf-8'));

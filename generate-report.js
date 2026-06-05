@@ -2,16 +2,35 @@
 const path = require('path');
 
 function safeSegment(value) {
-  return String(value || 'output').trim().toLowerCase().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
+  return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
+}
+
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function outputDirs(taskName) {
-  const date = new Date().toISOString().split('T')[0];
+  const date = localDateString();
   const root = path.join(process.cwd(), 'output', `${date}-${safeSegment(taskName)}`);
   return {
     root,
     reports: path.join(root, 'reports')
   };
+}
+
+function outputDirsFromDataFile(filePath, taskName) {
+  const dataDir = path.resolve(path.dirname(filePath));
+  if (path.basename(dataDir).toLowerCase() === 'data') {
+    const root = path.dirname(dataDir);
+    return {
+      root,
+      reports: path.join(root, 'reports')
+    };
+  }
+  return outputDirs(taskName);
 }
 
 function escapeHtml(value) {
@@ -77,6 +96,7 @@ const data = jsonData.data;
 const excluded = jsonData.excluded || [];
 const total = jsonData.total;
 const TODAY = new Date();
+const REPORT_DATE = localDateString(TODAY);
 
 const rawTotal = jsonData.rawTotal || data.length;
 
@@ -656,7 +676,7 @@ let html = fs.readFileSync(path.join(__dirname, 'report-template.html'), 'utf-8'
 // Placeholder replacements.
 const replacements = {
   '{{KEYWORD}}': jsonData.keyword || '未知',
-  '{{DATE}}': TODAY.toISOString().split('T')[0],
+  '{{DATE}}': REPORT_DATE,
   '{{MAX_BSR}}': bsrMax.toLocaleString(),
   '{{TARGET_CATEGORY}}': jsonData.targetCategory || '未知',
   '{{ALL_COUNT}}': jsonData.allCount || 0,
@@ -1441,8 +1461,52 @@ if (seasonalityData && seasonalityData.seasonality) {
     : `${avgClick > 50 || avgConvert > 50 ? '头部集中风险偏高。' : avgClick < 20 && avgConvert < 20 ? '头部集中度较低，但也可能代表流量高度分散、竞争面更广。' : '头部集中度中等。'}最近 6 个月 TOP3 点击份额均值 ${avgClick.toFixed(1)}%，转化份额均值 ${avgConvert.toFixed(1)}%。点击份额代表曝光集中度，转化份额代表成交集中度，二者都需要和广告 CPC、评论壁垒一起判断。`;
   const oppStandardText = '机会指数上升且在售商品数稳定或下降，代表需求相对供给改善；机会指数下降且在售商品数上升，代表供给挤压或需求走弱；变化幅度超过 10% 视为需要重点关注。';
   const top3StandardText = 'TOP3 点击或转化份额 >50% 为头部集中风险偏高；两者均 <20% 为头部垄断弱但流量分散；20%-50% 为中等集中度，需要结合 CPC、评论壁垒和新品存活率判断。';
-  const googlePeaks = (s.googlePeakMonths || []).map(normalizeMonth).join('、') || '无';
+  const computeGooglePeakMonths = () => {
+    const points = seasonalityData.googleTrendsData?.data5Years || seasonalityData.googleTrendsData?.data || [];
+    if (!points.length) return [];
+    const monthByYear = {};
+    points.forEach(p => {
+      if (!p.date || p.date.length < 7) return;
+      const year = p.date.substring(0, 4);
+      const month = p.date.substring(5, 7);
+      const value = Number(p.value);
+      if (!Number.isFinite(value)) return;
+      if (!monthByYear[year]) monthByYear[year] = {};
+      monthByYear[year][month] = value;
+    });
+    const months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+    const avgs = months.map(m => {
+      let sum = 0;
+      let count = 0;
+      Object.values(monthByYear).forEach(yd => {
+        if (yd[m] !== undefined) {
+          sum += yd[m];
+          count += 1;
+        }
+      });
+      return count > 0 ? sum / count : 0;
+    });
+    const maxAvg = Math.max(...avgs);
+    if (!Number.isFinite(maxAvg) || maxAvg <= 0) return [];
+    return months.filter((m, i) => avgs[i] >= maxAvg * 0.85);
+  };
+  const googlePeakMonths = (s.googlePeakMonths && s.googlePeakMonths.length > 0)
+    ? s.googlePeakMonths
+    : computeGooglePeakMonths();
+  const googlePeakNote = googlePeakMonths.length > 0
+    ? 'Google 峰值月按 5 年周级搜索兴趣汇总为多年月均值，达到最高月均值 85% 以上的月份计为峰值月。'
+    : 'Google Trends 数据缺失或无法解析，Google 峰值月暂不参与判断。';
+  const googlePeaks = googlePeakMonths.map(normalizeMonth).join('、') || '无';
   const oalurPeaks = (s.oalurPeakMonths || []).map(normalizeMonth).join('、') || '无';
+  const dataConsistency = (() => {
+    if (!googlePeakMonths.length || !(s.oalurPeakMonths || []).length) return s.googleVsOalurDeviation || 'Google 或 Oalur 峰值月不足，无法做峰值一致性判断';
+    const gtSet = new Set(googlePeakMonths.map(m => parseInt(String(m).match(/\d{1,2}/)?.[0] || '0', 10)).filter(Boolean));
+    const oalurSet = new Set((s.oalurPeakMonths || []).map(m => parseInt(String(m).match(/\d{1,2}/)?.[0] || '0', 10)).filter(Boolean));
+    const overlap = [...gtSet].filter(m => oalurSet.has(m));
+    if (overlap.length === 0) return '峰值月份不一致，请优先以 Oalur 站内搜索量为准';
+    if (overlap.length < Math.min(gtSet.size, oalurSet.size)) return '峰值月份部分一致，Oalur 站内峰值可能滞后或更集中';
+    return '峰值月份一致';
+  })();
   const seasonAdvice = sType === '强季节性'
     ? '该品类旺季集中，需提前 2-3 个月完成采购和入仓，淡季库存与现金流风险较高。'
     : '季节性压力相对较低，但仍需结合站内搜索量、BSR 和广告成本验证全年稳定性。';
@@ -1459,7 +1523,8 @@ if (seasonalityData && seasonalityData.seasonality) {
     <div class="metric"><div class="value">${oalurPeaks}</div><div class="label">Oalur 峰值月</div></div>
   </div>
   <div style="padding:10px 14px;background:#f0f5ff;border-radius:8px;font-size:13px;line-height:1.8;margin-bottom:16px;">
-    <strong>数据一致性：</strong>${s.googleVsOalurDeviation || '未检测到明显偏差'}<br>
+    <strong>数据一致性：</strong>${dataConsistency}<br>
+    <strong>Google 判断口径：</strong>${googlePeakNote}<br>
     <strong>知识库解读：</strong>${seasonAdvice} 判断季节性必须用 Google Trends、站内搜索量、BSR/销量趋势交叉验证，不能只看单一工具。<br>
     <strong>TOP3 最近6月：</strong>点击份额 ${avgClick == null ? '未采集' : avgClick.toFixed(1) + '%'}；转化份额 ${avgConvert == null ? '未采集' : avgConvert.toFixed(1) + '%'}。
   </div>
@@ -1535,7 +1600,7 @@ if (seasonalityData && seasonalityData.seasonality) {
 // ============ ASIN lifecycle analysis ============
 if (lifecycleData && lifecycleData.products && lifecycleData.products.length > 0) {
   const lifecycleKeyword = (jsonData.keyword || 'unknown').replace(/\s+/g, '-');
-  const lifecycleReportName = `${TODAY.toISOString().split('T')[0]}_${lifecycleKeyword}_ASIN生命周期趋势分析.html`;
+  const lifecycleReportName = `${REPORT_DATE}_${lifecycleKeyword}_ASIN生命周期趋势分析.html`;
   const normalizeLifecycle = (value) => {
     const raw = String(value || '');
     if (raw.includes('衰') || raw.includes('琛伴')) return '衰退期';
@@ -1559,8 +1624,8 @@ if (lifecycleData && lifecycleData.products && lifecycleData.products.length > 0
   }).join('\n');
 
   replacements['{{LIFECYCLE_BLOCK}}'] = `
-<h1 style="margin-top:32px;">老品 ASIN 生命周期分析</h1>
 <div class="card">
+  <h2>老品 ASIN 生命周期分析</h2>
   <p style="color:#666;font-size:13px;margin-bottom:12px;">
     从当前市场中抽取上架时间较长的代表性 ASIN，基于 Oalur 导出的 <strong>Buybox 价格 / Ratings 数 / 大类 BSR</strong> 趋势判断生命周期。
   </p>
@@ -1696,8 +1761,8 @@ auditItems.push(auditRow(
 ));
 
 replacements['{{KNOWLEDGE_AUDIT_BLOCK}}'] = `
-<h1 style="margin-top:32px;">📌 知识库缺口审计与产品缺陷提示</h1>
 <div class="card">
+  <h2>📌 知识库缺口审计与产品缺陷提示</h2>
   <p style="font-size:13px;color:#666;line-height:1.8;margin-bottom:12px;">
     该模块基于 <code>./knowledge</code> 中的选品方法论，对当前 Oalur 抓取数据无法证明的关键决策项做缺口审计。
     结论原则：已有数据只用于市场/竞争初筛；利润、合规、用户痛点和供应链未验证前，不应直接进入开发。
@@ -1717,7 +1782,7 @@ for (const [key, val] of Object.entries(replacements)) {
 
 // Save report.
 const keyword = (jsonData.keyword || 'unknown').replace(/\s+/g, '-');
-const outPath = path.join(outputDirs(keyword).reports, TODAY.toISOString().split('T')[0] + '_' + keyword + '_知识库优化市场容量分析.html');
+const outPath = path.join(outputDirsFromDataFile(resolvedDataPath, keyword).reports, REPORT_DATE + '_' + keyword + '_市场分析.html');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, html, 'utf-8');
 console.log('报告已保存:', outPath);

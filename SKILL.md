@@ -386,3 +386,136 @@ node skills/oalur-market-capacity/generate-report.js output/日期-Biscuit-Cutte
 报告自动保存到：
 - `output/YYYY-MM-DD-Biscuit-Cutter/reports/YYYY-MM-DD_Biscuit-Cutter_市场容量分析.html`（报告1：完整分析）
 - `output/YYYY-MM-DD-ASIN列表/reports/YYYY-MM-DD_ASIN列表_ASIN趋势分析.html`（报告2：ASIN价格排名趋势，Step 3 自动生成）
+
+## HTML 报告离线打包流程
+
+当用户要求“打包两个 HTML 报告”“让报告在别的电脑上也能浏览”时，必须把主报告和 ASIN 生命周期报告做成独立离线包。
+
+### 打包目标
+
+输出到当前任务目录下：
+
+```text
+output/YYYY-MM-DD-关键词/package/关键词-html-reports-offline-时间戳/
+output/YYYY-MM-DD-关键词/package/关键词-html-reports-offline-时间戳.zip
+```
+
+包内必须包含：
+
+```text
+YYYY-MM-DD_关键词_市场分析.html
+YYYY-MM-DD_关键词_ASIN生命周期趋势分析.html
+assets/chart.umd.min.js
+assets/chartjs-adapter-date-fns.bundle.min.js
+README.txt
+```
+
+### 依赖本地化
+
+两个报告使用 Chart.js 渲染图表，不能保留 CDN 依赖，否则别的电脑离线打开会缺图。
+
+需要下载并保存到 `downloads/`，再复制到打包目录的 `assets/`：
+
+```text
+https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js
+https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js
+```
+
+打包副本中的脚本引用必须替换为：
+
+```html
+<script src="assets/chart.umd.min.js"></script>
+<script src="assets/chartjs-adapter-date-fns.bundle.min.js"></script>
+```
+
+注意：只修改打包副本，不要为了打包去改 `reports/` 下的原始报告。
+
+### 打包命令示例
+
+以下示例以 `Coffee Spoon` 为例，实际使用时替换任务目录和文件名：
+
+```powershell
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$taskDir = 'output\2026-06-05-Coffee-Spoon'
+$packageRoot = "$taskDir\package\coffee-spoon-html-reports-offline-$stamp"
+$assetsDir = "$packageRoot\assets"
+New-Item -ItemType Directory -Force downloads, $assetsDir | Out-Null
+
+$chartDownload = "downloads\chart.umd.min-$stamp.js"
+$adapterDownload = "downloads\chartjs-adapter-date-fns.bundle.min-$stamp.js"
+Invoke-WebRequest -Uri 'https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js' -OutFile $chartDownload
+Invoke-WebRequest -Uri 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js' -OutFile $adapterDownload
+
+Copy-Item $chartDownload "$assetsDir\chart.umd.min.js"
+Copy-Item $adapterDownload "$assetsDir\chartjs-adapter-date-fns.bundle.min.js"
+Copy-Item "$taskDir\reports\2026-06-05_Coffee-Spoon_市场分析.html" "$packageRoot\2026-06-05_Coffee-Spoon_市场分析.html"
+Copy-Item "$taskDir\reports\2026-06-05_Coffee-Spoon_ASIN生命周期趋势分析.html" "$packageRoot\2026-06-05_Coffee-Spoon_ASIN生命周期趋势分析.html"
+
+$main = "$packageRoot\2026-06-05_Coffee-Spoon_市场分析.html"
+$life = "$packageRoot\2026-06-05_Coffee-Spoon_ASIN生命周期趋势分析.html"
+(Get-Content -Raw -Encoding UTF8 $main).Replace('https://cdn.jsdelivr.net/npm/chart.js','assets/chart.umd.min.js') | Set-Content -Encoding UTF8 $main
+(Get-Content -Raw -Encoding UTF8 $life).Replace('https://cdn.jsdelivr.net/npm/chart.js','assets/chart.umd.min.js').Replace('https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3','assets/chartjs-adapter-date-fns.bundle.min.js') | Set-Content -Encoding UTF8 $life
+
+@"
+打开方式：
+1. 解压 zip。
+2. 双击主报告 HTML。
+3. 主报告中的 ASIN 生命周期链接会打开同目录下的生命周期报告。
+
+说明：
+- Chart.js 与日期适配器已放在 assets/，图表可离线浏览。
+- Amazon 商品链接仍为外部网页链接，需要联网才能打开商品详情。
+"@ | Set-Content -Encoding UTF8 "$packageRoot\README.txt"
+
+Compress-Archive -Path "$packageRoot\*" -DestinationPath "$packageRoot.zip"
+```
+
+### 打包后必须验证
+
+1. 检查 zip 内容必须包含 2 个 HTML、2 个 assets JS、README：
+
+```powershell
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::OpenRead("output\...\package\xxx.zip").Entries | Select-Object FullName,Length
+```
+
+2. 检查包内 HTML 不再引用 CDN：
+
+```powershell
+Select-String -Path "output\...\package\xxx\*.html" -Pattern 'cdn.jsdelivr.net|<script src|assets/|ASIN生命周期趋势分析'
+```
+
+结果中不应出现 `cdn.jsdelivr.net`，应出现 `assets/chart.umd.min.js` 和 `assets/chartjs-adapter-date-fns.bundle.min.js`。
+
+3. 用 Edge CDP 打开包内两个 HTML，检查 canvas 数量和非空渲染：
+
+```javascript
+const puppeteer = require('puppeteer-core');
+const fs = require('fs');
+const path = require('path');
+const { pathToFileURL } = require('url');
+
+const pkgDir = path.resolve('output/YYYY-MM-DD-关键词/package/xxx');
+const files = fs.readdirSync(pkgDir).filter(f => f.endsWith('.html'));
+const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: { width: 1440, height: 1000 } });
+for (const file of files) {
+  const page = await browser.newPage();
+  await page.goto(pathToFileURL(path.join(pkgDir, file)).href, { waitUntil: 'networkidle2', timeout: 30000 });
+  await new Promise(r => setTimeout(r, 2500));
+  const canvases = await page.evaluate(() => [...document.querySelectorAll('canvas')].map(c => {
+    const ctx = c.getContext('2d');
+    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    let nonEmpty = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) nonEmpty++;
+    return { id: c.id, nonEmpty };
+  }));
+  console.log(file, { canvasCount: canvases.length, emptyCanvas: canvases.filter(c => c.nonEmpty === 0).length });
+  await page.close();
+}
+await browser.disconnect();
+```
+
+合格标准：
+- 主报告和生命周期报告都能从 `file://` 打开。
+- `emptyCanvas` 必须为 `0`。
+- 生命周期报告应有 `6 个 ASIN × 3 张图 = 18` 个 canvas（如果 ASIN 数量不同，则按实际 ASIN 数 × 3）。
