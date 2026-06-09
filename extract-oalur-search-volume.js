@@ -29,6 +29,64 @@ function outputDirs(taskName) {
   };
 }
 
+function parseNumber(value) {
+  const n = Number(String(value || '').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function stemToken(token) {
+  const t = String(token || '').toLowerCase();
+  if (t.length > 4 && t.endsWith('ies')) return t.slice(0, -3) + 'y';
+  if (t.length > 3 && t.endsWith('es')) return t.slice(0, -2);
+  if (t.length > 3 && t.endsWith('s')) return t.slice(0, -1);
+  return t;
+}
+
+function normalizeKeyword(value) {
+  return String(value || '')
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.map(stemToken)
+    .join(' ') || '';
+}
+
+function buildKeywordRecommendation(queryKeyword, rows) {
+  const normalizedQuery = normalizeKeyword(queryKeyword);
+  const similarRows = rows
+    .filter(row => normalizeKeyword(row.keyword) === normalizedQuery)
+    .map(row => ({ ...row, weeklySearchVolume: parseNumber(row.searchVolume) }))
+    .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume);
+  const candidates = similarRows.length ? similarRows : rows
+    .map(row => ({ ...row, weeklySearchVolume: parseNumber(row.searchVolume) }))
+    .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume)
+    .slice(0, 1);
+  const queriedRow = rows.find(row => row.keyword.toLowerCase() === String(queryKeyword).toLowerCase());
+  const queriedVolume = queriedRow ? parseNumber(queriedRow.searchVolume) : null;
+  const best = candidates[0] || null;
+  const recommendedKeyword = best?.keyword || queryKeyword;
+  const isQueryBest = normalizeKeyword(recommendedKeyword) === normalizedQuery &&
+    String(recommendedKeyword).toLowerCase() === String(queryKeyword).toLowerCase();
+  return {
+    queriedKeyword: queryKeyword,
+    recommendedKeyword,
+    matchedKeyword: queriedRow?.keyword || '',
+    isQueryBest,
+    queriedWeeklySearchVolume: queriedVolume,
+    recommendedWeeklySearchVolume: best ? best.weeklySearchVolume : null,
+    candidateCount: candidates.length,
+    candidates: candidates.slice(0, 5).map(row => ({
+      keyword: row.keyword,
+      searchVolume: row.searchVolume,
+      weeklySearchVolume: row.weeklySearchVolume,
+      searchRank: row.searchRank,
+      productCount: row.productCount
+    })),
+    message: isQueryBest
+      ? `当前搜索词 "${queryKeyword}" 已是相似关键词中周搜索量最高的词，搜索词没有问题。`
+      : `建议优先搜索 "${recommendedKeyword}"，它在相似关键词中的周搜索量最高，高于当前输入词 "${queryKeyword}"。`
+  };
+}
+
 const keyword = process.argv[2];
 const defaultOut = keyword ? safeSegment(keyword) + '-oalur-volume.json' : '';
 const outFile = process.argv[3] || path.join(outputDirs(keyword || 'output').data, defaultOut);
@@ -88,7 +146,9 @@ async function extractVolume(page, kw) {
     }).filter(Boolean);
   });
 
-  const exactMatch = tableData.find(r => r.keyword.toLowerCase() === kw.toLowerCase());
+  const keywordRecommendation = buildKeywordRecommendation(kw, tableData);
+  const trendKeyword = keywordRecommendation.recommendedKeyword || kw;
+  const exactMatch = tableData.find(r => r.keyword.toLowerCase() === trendKeyword.toLowerCase());
   const basicData = exactMatch || tableData[0];
 
   if (!basicData) {
@@ -97,6 +157,7 @@ async function extractVolume(page, kw) {
   }
 
   console.log(`✅ 匹配行: "${basicData.keyword}"`);
+  console.log(`💡 ABA 搜索词建议: ${keywordRecommendation.message}`);
 
   // ===== Step 4: 点击趋势列打开弹窗 =====
   console.log('📈 打开趋势图弹窗...');
@@ -113,7 +174,7 @@ async function extractVolume(page, kw) {
       }
     }
     return 'row not found';
-  }, kw);
+  }, trendKeyword);
   console.log(`   点击: ${clickResult}`);
   await new Promise(r => setTimeout(r, 6000));
 
@@ -201,9 +262,11 @@ async function extractVolume(page, kw) {
   const sortedMonths = Object.keys(searchesTrend).sort();
   const result = {
     keyword: kw,
+    trendKeyword,
     extractedAt: new Date().toISOString(),
     basicData,
     allKeywords: tableData,
+    keywordRecommendation,
     // 搜索趋势区
     searchesTrend,
     searchesRankTrend,

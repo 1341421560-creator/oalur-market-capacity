@@ -18,6 +18,13 @@ const SHAPE_ALIASES = {
   pan: ['pan', 'mold', 'mould']
 };
 
+const ACCESSORY_LEAF_TOKENS = new Set(['rest', 'holder', 'stand', 'rack', 'organizer', 'case', 'cover']);
+
+const MODIFIER_ALIASES = {
+  coffee: ['coffee', 'espresso', 'demitasse', 'cappuccino', 'latte', 'moka'],
+  espresso: ['espresso', 'coffee', 'demitasse', 'cappuccino', 'latte', 'moka']
+};
+
 function stemToken(token) {
   const t = String(token || '').toLowerCase();
   if (t.length > 4 && t.endsWith('ies')) return t.slice(0, -3) + 'y';
@@ -50,6 +57,10 @@ function aliasesFor(token) {
   return new Set([token, ...(SHAPE_ALIASES[token] || [])].map(stemToken));
 }
 
+function modifierAliasesFor(token) {
+  return new Set([token, ...(MODIFIER_ALIASES[token] || [])].map(stemToken));
+}
+
 function anyTokenHit(words, tokens) {
   return [...tokens].some(token => words.has(token));
 }
@@ -69,6 +80,7 @@ function scoreCategoryForKeyword(category, items, keyword) {
   const modifierTokens = tokens.slice(0, -1);
   const categoryWords = tokenSet(category);
   const leafWords = tokenSet(categoryLeaf(category));
+  const accessoryLeaf = [...ACCESSORY_LEAF_TOKENS].some(token => leafWords.has(token));
   const categoryTokenHits = tokens.filter(token => categoryWords.has(token));
   const leafTokenHits = tokens.filter(token => leafWords.has(token));
   const modifierHits = countHits(categoryWords, modifierTokens);
@@ -88,6 +100,7 @@ function scoreCategoryForKeyword(category, items, keyword) {
   }
   const titleAllRate = items.length ? titleAll / items.length : 0;
   const titleAnyRate = items.length ? titleAny / items.length : 0;
+  const functionalEquivalent = !accessoryLeaf && shapeHit && modifierTokens.length > 0 && modifierHits === 0 && titleAllRate >= 0.35 && titleAnyRate >= 0.7;
 
   let score = 0;
   if (allKeywordHit) score += 85;
@@ -98,7 +111,6 @@ function scoreCategoryForKeyword(category, items, keyword) {
   score += titleAllRate * 45;
   score += titleAnyRate * 12;
   score += Math.min(14, Math.log(items.length + 1) * 4);
-
   if (shapeHit && modifierTokens.length && modifierHits === 0 && titleAllRate < 0.35) score -= 35;
   if (!shapeHit && modifierHits > 0 && titleAllRate < 0.2) score -= 16;
   if (!shapeHit && modifierHits === 0) score -= 60;
@@ -108,6 +120,7 @@ function scoreCategoryForKeyword(category, items, keyword) {
   if (shapeHit) reasons.push(leafShapeHit ? 'leaf matches product form' : 'path matches product form');
   if (modifierHits) reasons.push(`path matches ${modifierHits} modifier token(s)`);
   if (titleAllRate >= 0.35) reasons.push(`category titles strongly match keyword (${Math.round(titleAllRate * 100)}%)`);
+  if (functionalEquivalent) reasons.push('functional equivalent category candidate; requires ASIN title match');
   if (!reasons.length) reasons.push('low keyword relevance');
 
   return {
@@ -116,9 +129,33 @@ function scoreCategoryForKeyword(category, items, keyword) {
     tokenHits: [...new Set([...categoryTokenHits, ...leafTokenHits])],
     shapeHit,
     modifierHits,
+    functionalEquivalent,
     titleAllRate: Math.round(titleAllRate * 1000) / 1000,
     titleAnyRate: Math.round(titleAnyRate * 1000) / 1000
   };
+}
+
+function titleMatchesKeywordIntent(title, keyword) {
+  const tokens = keywordTokens(keyword);
+  if (!tokens.length) return false;
+  const shapeToken = tokens[tokens.length - 1];
+  const shapeAliases = aliasesFor(shapeToken);
+  const modifierTokens = tokens.slice(0, -1);
+  const titleWords = tokenSet(title);
+  const shapeHit = anyTokenHit(titleWords, shapeAliases);
+  const modifierHit = modifierTokens.every(token => anyTokenHit(titleWords, modifierAliasesFor(token)));
+  return shapeHit && (modifierTokens.length === 0 || modifierHit);
+}
+
+function listingMatchesKeywordIntent(item, keywords) {
+  const keywordList = Array.isArray(keywords) && keywords.length ? keywords : [''];
+  const titles = [
+    item.title,
+    item.productTitle,
+    item.productName,
+    ...(Array.isArray(item.variantRows) ? item.variantRows.map(row => row.title) : [])
+  ].filter(Boolean);
+  return titles.some(title => keywordList.some(keyword => titleMatchesKeywordIntent(title, keyword)));
 }
 
 function selectTargetCategories(products, keywords) {
@@ -145,6 +182,7 @@ function selectTargetCategories(products, keywords) {
       tokenHits: best.tokenHits,
       shapeHit: best.shapeHit,
       modifierHits: best.modifierHits,
+      functionalEquivalent: best.functionalEquivalent,
       titleAllRate: best.titleAllRate,
       titleAnyRate: best.titleAnyRate,
       perKeyword
@@ -172,6 +210,7 @@ function selectTargetCategories(products, keywords) {
       selectedKeyword: d.selectedKeyword,
       reason: d.reason,
       tokenHits: d.tokenHits,
+      functionalEquivalent: d.functionalEquivalent,
       titleAllRate: d.titleAllRate,
       titleAnyRate: d.titleAnyRate
     }))
@@ -182,5 +221,7 @@ module.exports = {
   selectTargetCategories,
   stemToken,
   tokenize,
-  keywordTokens
+  keywordTokens,
+  titleMatchesKeywordIntent,
+  listingMatchesKeywordIntent
 };

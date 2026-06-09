@@ -43,6 +43,90 @@ function escapeHtml(value) {
   }[c]));
 }
 
+function parsePlainNumber(value) {
+  const n = Number(String(value || '').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function stemToken(token) {
+  const t = String(token || '').toLowerCase();
+  if (t.length > 4 && t.endsWith('ies')) return t.slice(0, -3) + 'y';
+  if (t.length > 3 && t.endsWith('es')) return t.slice(0, -2);
+  if (t.length > 3 && t.endsWith('s')) return t.slice(0, -1);
+  return t;
+}
+
+function normalizeKeyword(value) {
+  return String(value || '')
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.map(stemToken)
+    .join(' ') || '';
+}
+
+function keywordRecommendationFromOalur(queryKeyword, oalurData) {
+  if (!oalurData) return null;
+  if (oalurData.keywordRecommendation?.recommendedKeyword) return oalurData.keywordRecommendation;
+  const rows = Array.isArray(oalurData.allKeywords) ? oalurData.allKeywords : [];
+  if (!rows.length) return null;
+  const normalizedQuery = normalizeKeyword(queryKeyword);
+  const similarRows = rows
+    .filter(row => normalizeKeyword(row.keyword) === normalizedQuery)
+    .map(row => ({ ...row, weeklySearchVolume: parsePlainNumber(row.searchVolume) }))
+    .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume);
+  if (!similarRows.length) return null;
+  const queriedRow = rows.find(row => String(row.keyword || '').toLowerCase() === String(queryKeyword || '').toLowerCase());
+  const best = similarRows[0];
+  const isQueryBest = String(best.keyword || '').toLowerCase() === String(queryKeyword || '').toLowerCase();
+  return {
+    queriedKeyword: queryKeyword,
+    recommendedKeyword: best.keyword,
+    matchedKeyword: queriedRow?.keyword || '',
+    isQueryBest,
+    queriedWeeklySearchVolume: queriedRow ? parsePlainNumber(queriedRow.searchVolume) : null,
+    recommendedWeeklySearchVolume: best.weeklySearchVolume,
+    candidateCount: similarRows.length,
+    candidates: similarRows.slice(0, 5).map(row => ({
+      keyword: row.keyword,
+      searchVolume: row.searchVolume,
+      weeklySearchVolume: row.weeklySearchVolume,
+      searchRank: row.searchRank,
+      productCount: row.productCount
+    }))
+  };
+}
+
+function keywordRecommendationHtml(recommendation, embedded = false) {
+  if (!recommendation?.recommendedKeyword) return '';
+  const queried = recommendation.queriedKeyword || jsonData.keyword || '';
+  const recommended = recommendation.recommendedKeyword;
+  const queriedVol = recommendation.queriedWeeklySearchVolume == null ? '未匹配' : Number(recommendation.queriedWeeklySearchVolume).toLocaleString();
+  const recommendedVol = recommendation.recommendedWeeklySearchVolume == null ? '未采集' : Number(recommendation.recommendedWeeklySearchVolume).toLocaleString();
+  const ok = recommendation.isQueryBest;
+  const bg = ok ? '#f6ffed' : '#fff7e6';
+  const border = ok ? '#b7eb8f' : '#ffd591';
+  const color = ok ? '#237804' : '#ad6800';
+  const title = ok ? 'ABA 搜索词检查：当前关键词没问题' : 'ABA 搜索词检查：建议更换搜索词';
+  const main = ok
+    ? `当前输入词 <strong>${escapeHtml(queried)}</strong> 已是相似关键词中周搜索量最高的词。`
+    : `建议优先搜索 <strong>${escapeHtml(recommended)}</strong>，而不是 <strong>${escapeHtml(queried)}</strong>。`;
+  if (embedded) {
+    return `
+  <div style="padding:10px 14px;background:${bg};border:1px solid ${border};border-radius:8px;font-size:13px;line-height:1.8;margin-bottom:16px;color:#555;">
+    <strong style="color:${color};">${title}：</strong>${main}
+    周搜索量：推荐词 ${recommendedVol}；当前输入词 ${queriedVol}。
+  </div>`;
+  }
+  return `
+<div class="card" style="background:${bg};border:1px solid ${border};padding:16px 20px;">
+  <h2 style="border:none;margin-bottom:8px;color:${color};padding-bottom:0;">${title}</h2>
+  <div style="font-size:14px;line-height:1.8;color:#555;">
+    ${main}<br>
+    周搜索量：推荐词 ${recommendedVol}；当前输入词 ${queriedVol}。判断范围为 ABA 搜索结果中与输入词单复数/词根相同的相似关键词。
+  </div>
+</div>`;
+}
+
 function productTitle(d) {
   return d?.title || d?.productTitle || d?.productName || d?.name || d?.itemName || d?.asin || '无标题';
 }
@@ -72,6 +156,16 @@ let historicalData = null;
 let survivalRateData = null;
 if (historicalFile && fs.existsSync(historicalFile)) {
   historicalData = JSON.parse(fs.readFileSync(historicalFile, 'utf-8'));
+  if (Array.isArray(jsonData.targetCategories) && jsonData.targetCategories.length) {
+    const targetSet = new Set(jsonData.targetCategories);
+    const histAll = [...(historicalData.data || []), ...(historicalData.excluded || [])];
+    historicalData.data = histAll.filter(item => targetSet.has(item.category));
+    historicalData.excluded = histAll.filter(item => !targetSet.has(item.category));
+    historicalData.filteredCount = historicalData.data.length;
+    historicalData.excludedCount = historicalData.excluded.length;
+    historicalData.targetCategory = jsonData.targetCategory;
+    historicalData.targetCategories = jsonData.targetCategories;
+  }
   console.log('馃搨 宸插姞杞藉巻鍙叉暟鎹?', historicalFile, '| 鏃堕棿:', historicalData.timeFilter);
   // 校验历史数据时间是否接近期望的 6 个月前月份。
   const histTime = historicalData.timeFilter || '';
@@ -102,6 +196,7 @@ const TODAY = new Date();
 const REPORT_DATE = localDateString(TODAY);
 
 const rawTotal = jsonData.rawTotal || data.length;
+const keywordIntentRescuedCount = data.filter(d => d.keywordIntentRescued).length;
 
 // Parse listing age. Prefer listingAge, fall back to listingDate.
 function parseAge(d) {
@@ -126,9 +221,66 @@ function formatAge(d) {
   return (months / 12).toFixed(1) + '年';
 }
 
-// BSR distribution, using 1000-rank intervals.
+function relevantChildRows(d) {
+  const rows = Array.isArray(d.variantRows) && d.variantRows.length
+    ? d.variantRows
+    : [{
+      asin: d.asin,
+      pasin: d.pasin,
+      title: d.title,
+      listingDate: d.listingDate,
+      listingAge: d.listingAge,
+      sales: d.sales,
+      revenue: d.revenue,
+      bsr: d.bsr,
+      brand: d.brand
+    }];
+  const matched = Array.isArray(d.targetMatchedChildAsins) && d.targetMatchedChildAsins.length
+    ? new Set(d.targetMatchedChildAsins)
+    : null;
+  const relevant = matched ? rows.filter(row => matched.has(row.asin)) : rows;
+  return relevant.length ? relevant : rows;
+}
+
+function enrichParentNewVariantInfo(d) {
+  const rows = relevantChildRows(d);
+  const newRows = rows
+    .map(row => ({ ...row, ageMonths: parseAge(row) }))
+    .filter(row => row.ageMonths >= 0 && row.ageMonths < 6)
+    .sort((a, b) => a.ageMonths - b.ageMonths);
+  const under12Rows = rows
+    .map(row => ({ ...row, ageMonths: parseAge(row) }))
+    .filter(row => row.ageMonths >= 0 && row.ageMonths < 12)
+    .sort((a, b) => a.ageMonths - b.ageMonths);
+  d.relevantChildAsinCount = new Set(rows.map(row => row.asin).filter(Boolean)).size || d.childAsinCount || 1;
+  d.newChildAsins = [...new Set(newRows.map(row => row.asin).filter(Boolean))];
+  d.under12mChildAsins = [...new Set(under12Rows.map(row => row.asin).filter(Boolean))];
+  d.parentHasNewVariant = d.newChildAsins.length > 0;
+  d.parentHasUnder12mVariant = d.under12mChildAsins.length > 0;
+  d.newestChildAsin = newRows[0]?.asin || '';
+  d.newestChildAgeMonths = newRows[0]?.ageMonths ?? null;
+  d.newestUnder12mChildAsin = under12Rows[0]?.asin || '';
+  d.newestUnder12mChildAgeMonths = under12Rows[0]?.ageMonths ?? null;
+  d.newVariantSource = d.parentHasNewVariant
+    ? (d.newestChildAsin && d.newestChildAsin !== d.asin ? '父体新品子ASIN' : '代表ASIN新品')
+    : '';
+  d.under12mVariantSource = d.parentHasUnder12mVariant
+    ? (d.newestUnder12mChildAsin && d.newestUnder12mChildAsin !== d.asin ? '父体<12月子ASIN' : '代表ASIN<12月')
+    : '';
+  return d;
+}
+
+data.forEach(enrichParentNewVariantInfo);
+
+function getBsrInterval(maxRank) {
+  if (maxRank <= 15000) return 1000;
+  if (maxRank < 25000) return 1500;
+  return 2000;
+}
+
+// BSR distribution, using dynamic rank intervals.
 const bsrMax = parseInt((jsonData.bsrRange || '1-10000').split('-')[1]) || 10000;
-const bsrInterval = 1000;
+const bsrInterval = getBsrInterval(bsrMax);
 const bsrSegmentCount = Math.ceil(bsrMax / bsrInterval);
 const bsrRanges = [];
 for (let i = 0; i < bsrSegmentCount; i++) {
@@ -171,8 +323,8 @@ data.forEach(d => {
   sellerCount[st] = (sellerCount[st] || 0) + 1;
 });
 
-// 鏂板搧
-const newProductsData = data.filter(d => { const m = parseAge(d); return m >= 0 && m < 6; });
+// 鏂板搧锛氭寜鐖朵綋 Listing 缁熻锛屼絾妫€鏌ョ埗浣撲笅鐩爣鐩稿叧瀛?ASIN銆?
+const newProductsData = data.filter(d => d.parentHasNewVariant);
 const newProducts = newProductsData.length;
 const newPct = data.length > 0 ? ((newProducts / data.length) * 100).toFixed(1) : '0';
 
@@ -195,7 +347,7 @@ if (historicalData && historicalData.data) {
     });
 
     // 褰撳墠鏁版嵁鐨?ASIN 闆嗗悎
-    const currentAsins = new Set(data.map(d => d.asin).filter(Boolean));
+    const currentAsins = new Set(data.flatMap(d => [d.asin, ...(d.childAsins || []), ...(d.targetMatchedChildAsins || [])]).filter(Boolean));
 
     // Historical new products that still survive in the current BSR range.
     const surviving = histNewProducts.filter(d => d.asin && currentAsins.has(d.asin));
@@ -371,7 +523,7 @@ const survivalSummaryColor = !survivalRateData || survivalRateData.levelClass ==
       : '#ff4d4f';
 
 // <12涓湀浜у搧鍒嗘瀽
-const under12mData = data.filter(d => { const m = parseAge(d); return m >= 0 && m < 12; });
+const under12mData = data.filter(d => d.parentHasUnder12mVariant);
 const under12mSalesNums = under12mData.map(parseSalesNum).filter(n => n > 0).sort((a, b) => a - b);
 const under12mMedian = under12mSalesNums.length > 0 ? (under12mSalesNums.length % 2 !== 0 ? under12mSalesNums[Math.floor(under12mSalesNums.length / 2)] : (under12mSalesNums[under12mSalesNums.length / 2 - 1] + under12mSalesNums[under12mSalesNums.length / 2]) / 2) : 0;
 const under12mAvg = under12mSalesNums.length > 0 ? Math.round(under12mSalesNums.reduce((a, b) => a + b, 0) / under12mSalesNums.length) : 0;
@@ -384,19 +536,25 @@ const under12mMedianShare = totalSales > 0 && under12mMedian > 0 ? ((under12mMed
 // New product detail rows.
 const newProductDetails = newProductsData.map(d => ({
   asin: d.asin,
+  newChildAsin: d.newestChildAsin || d.asin,
+  source: d.newVariantSource || '代表ASIN新品',
+  childCount: d.relevantChildAsinCount || d.childAsinCount || 1,
   brand: d.brand || '-',
   sales: parseSalesNum(d),
   share: totalSales > 0 ? ((parseSalesNum(d) / totalSales) * 100).toFixed(1) : '0',
-  age: parseAge(d)
+  age: d.newestChildAgeMonths ?? parseAge(d)
 })).sort((a, b) => b.sales - a.sales);
 
 // <12涓湀浜у搧璇︽儏鍒楄〃
 const under12mDetails = under12mData.map(d => ({
   asin: d.asin,
+  newChildAsin: d.newestUnder12mChildAsin || d.asin,
+  source: d.under12mVariantSource || '代表ASIN<12月',
+  childCount: d.relevantChildAsinCount || d.childAsinCount || 1,
   brand: d.brand || '-',
   sales: parseSalesNum(d),
   share: totalSales > 0 ? ((parseSalesNum(d) / totalSales) * 100).toFixed(1) : '0',
-  age: parseAge(d)
+  age: d.newestUnder12mChildAgeMonths ?? parseAge(d)
 })).sort((a, b) => b.sales - a.sales);
 
 // 5姝ユ硶
@@ -687,6 +845,7 @@ const replacements = {
   '{{EXCLUDED_COUNT}}': excluded.length,
   '{{RAW_TOTAL}}': rawTotal,
   '{{TOTAL}}': total,
+  '{{KEYWORD_INTENT_RESCUED_COUNT}}': keywordIntentRescuedCount,
   '{{NEW_PCT}}': newPct,
   '{{SALES_MEDIAN}}': salesMedian.toLocaleString(),
   '{{SALES_AVG}}': salesAvg.toLocaleString(),
@@ -716,6 +875,7 @@ const replacements = {
   '{{NEW_SALES_SUMMARY_COLOR}}': newSalesSummaryColor,
   '{{SURVIVAL_SUMMARY}}': survivalSummary,
   '{{SURVIVAL_SUMMARY_COLOR}}': survivalSummaryColor,
+  '{{KEYWORD_RECOMMENDATION_BLOCK}}': '',
   '{{UNDER12M_COUNT}}': under12mData.length,
   '{{UNDER12M_PCT}}': data.length > 0 ? ((under12mData.length / data.length) * 100).toFixed(1) : '0',
   '{{UNDER12M_SALES_MAX}}': under12mMax.toLocaleString(),
@@ -932,12 +1092,12 @@ replacements['{{ENTRY_BARRIERS}}'] = entryBarriers.map(b => '<li>' + b + '</li>'
 
 // New product detail rows.
 replacements['{{NEW_PRODUCT_ROWS}}'] = newProductDetails.map((d, i) =>
-  '<tr><td>' + (i + 1) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + d.brand + '</td><td>' + d.sales.toLocaleString() + '</td><td>' + d.share + '%</td><td>' + d.age + '个月</td></tr>'
+  '<tr><td>' + (i + 1) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td><a href="https://www.amazon.com/dp/' + d.newChildAsin + '" target="_blank">' + d.newChildAsin + '</a></td><td>' + d.source + '</td><td>' + d.childCount + '</td><td>' + d.brand + '</td><td>' + d.sales.toLocaleString() + '</td><td>' + d.share + '%</td><td>' + d.age + '个月</td></tr>'
 ).join('\n');
 
 // Under-12-month product detail rows.
 replacements['{{UNDER12M_ROWS}}'] = under12mDetails.map((d, i) =>
-  '<tr><td>' + (i + 1) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + d.brand + '</td><td>' + d.sales.toLocaleString() + '</td><td>' + d.share + '%</td><td>' + d.age + '个月</td></tr>'
+  '<tr><td>' + (i + 1) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td><a href="https://www.amazon.com/dp/' + d.newChildAsin + '" target="_blank">' + d.newChildAsin + '</a></td><td>' + d.source + '</td><td>' + d.childCount + '</td><td>' + d.brand + '</td><td>' + d.sales.toLocaleString() + '</td><td>' + d.share + '%</td><td>' + d.age + '个月</td></tr>'
 ).join('\n');
 
 // Excluded product rows.
@@ -956,7 +1116,7 @@ const kwSourceRows = kwSourceData.map((k, i) =>
 
 // Product detail rows.
 replacements['{{PRODUCT_ROWS}}'] = data.sort((a, b) => a.bsr - b.bsr).map((d, i) =>
-  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + d.ratings + '</td><td>' + d.brand + '</td></tr>'
+  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + (d.keywordIntentRescued ? '<span style="color:#ad6800;font-weight:600;">标题意图救回</span>' : '目标类目') + '</td><td>' + (d.relevantChildAsinCount || d.childAsinCount || 1) + '</td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + d.ratings + '</td><td>' + d.brand + '</td></tr>'
 ).join('\n');
 replacements['{{KW_SOURCE_ROWS}}'] = kwSourceRows;
 
@@ -1427,6 +1587,10 @@ if (seasonalityData && seasonalityData.seasonality) {
   const productSeries = trendSeries(seasonalityData.oalurVolumeData?.productTotalNumTrend);
   const clickSeries = trendSeries(seasonalityData.oalurVolumeData?.topClickRatioTrend);
   const convertMap = seasonalityData.oalurVolumeData?.topConvertRatioTrend || {};
+  const seasonalityKeywordForRecommendation = seasonalityData.seasonalityKeyword || seasonalityData.keyword || seasonalityData.oalurVolumeData?.keyword || jsonData.keyword;
+  const abaKeywordRecommendation = keywordRecommendationFromOalur(seasonalityKeywordForRecommendation, seasonalityData.oalurVolumeData);
+  const abaKeywordRecommendationBlock = keywordRecommendationHtml(abaKeywordRecommendation);
+  const abaKeywordRecommendationInline = keywordRecommendationHtml(abaKeywordRecommendation, true);
   const convertValues = clickSeries.labels.map(label => {
     const key = Object.keys(convertMap).find(k => k.substring(0, 7) === label);
     return key ? Number(convertMap[key]) : null;
@@ -1516,9 +1680,11 @@ if (seasonalityData && seasonalityData.seasonality) {
 
   replacements['{{SEASONALITY_SUMMARY}}'] = `<span style="color:${sColor};font-weight:700">${sType}</span>`;
   replacements['{{SEASONALITY_SUMMARY_CLASS}}'] = '';
+  replacements['{{KEYWORD_RECOMMENDATION_BLOCK}}'] = abaKeywordRecommendationBlock;
   replacements['{{SEASONALITY_BLOCK}}'] = `
 <div class="card">
   <h2>季节性与市场趋势分析</h2>
+  ${abaKeywordRecommendationInline}
   <div class="metric-grid">
     <div class="metric"><div class="value" style="color:${sColor}">${sType}</div><div class="label">季节性类型</div></div>
     <div class="metric"><div class="value">${sScore}</div><div class="label">季节性得分</div></div>
@@ -1603,7 +1769,13 @@ if (seasonalityData && seasonalityData.seasonality) {
 // ============ ASIN lifecycle analysis ============
 if (lifecycleData && lifecycleData.products && lifecycleData.products.length > 0) {
   const lifecycleKeyword = (jsonData.keyword || 'unknown').replace(/\s+/g, '-');
-  const lifecycleReportName = `${REPORT_DATE}_${lifecycleKeyword}_ASIN生命周期趋势分析.html`;
+  const lifecycleReportsDir = outputDirsFromDataFile(resolvedDataPath, lifecycleKeyword).reports;
+  const lifecycleReportName = fs.existsSync(lifecycleReportsDir)
+    ? (fs.readdirSync(lifecycleReportsDir)
+      .filter(name => name.includes('ASIN生命周期趋势分析') && name.endsWith('.html'))
+      .map(name => ({ name, mtimeMs: fs.statSync(path.join(lifecycleReportsDir, name)).mtimeMs }))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.name || `${REPORT_DATE}_${lifecycleKeyword}_ASIN生命周期趋势分析.html`)
+    : `${REPORT_DATE}_${lifecycleKeyword}_ASIN生命周期趋势分析.html`;
   const normalizeLifecycle = (value) => {
     const raw = String(value || '');
     if (raw.includes('衰') || raw.includes('琛伴')) return '衰退期';

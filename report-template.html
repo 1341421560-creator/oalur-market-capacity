@@ -51,6 +51,8 @@
   数据时间范围：{{TIME_RANGE}}
 </div>
 
+{{KEYWORD_RECOMMENDATION_BLOCK}}
+
 <!-- 分析结论总览 -->
 <div class="card" style="background: linear-gradient(135deg, #f0f5ff 0%, #e6f7ff 100%); border: 1px solid #bae0ff;">
   <h2 style="border:none;padding-left:0;">📋 分析结论总览</h2>
@@ -330,7 +332,7 @@
     <strong>新品存活模块分析：</strong>{{NEW_SALES_SUMMARY}}。与 6 个月新品存活率一起判断：{{SURVIVAL_SUMMARY}}。
   </div>
   <table style="margin-top:16px;">
-    <tr><th>#</th><th>ASIN</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
+    <tr><th>#</th><th>父体/代表ASIN</th><th>新品子ASIN</th><th>来源</th><th>子ASIN数</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
     {{NEW_PRODUCT_ROWS}}
   </table>
 </div>
@@ -353,7 +355,7 @@
     <span style="color:#666;">全市场销量中位数：{{SALES_MEDIAN}} | 总销量：{{TOTAL_SALES}}</span>
   </div>
   <table style="margin-top:16px;">
-    <tr><th>#</th><th>ASIN</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
+    <tr><th>#</th><th>父体/代表ASIN</th><th>&lt;12月子ASIN</th><th>来源</th><th>子ASIN数</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
     {{UNDER12M_ROWS}}
   </table>
 </div>
@@ -379,9 +381,12 @@
 <!-- 过滤后的 ASIN -->
 <div class="card">
   <h2>过滤后的 ASIN（{{FILTERED_COUNT}} 个，按 BSR 排序，{{TIME_RANGE}}）</h2>
+  <div style="margin-bottom:10px;padding:8px 12px;background:#fff7e6;border-left:4px solid #faad14;border-radius:6px;font-size:12px;color:#666;">
+    标题意图救回：<strong>{{KEYWORD_INTENT_RESCUED_COUNT}}</strong> 个。表示该父体 Listing 没有落在目标类目组内，但处于功能等价候选类目，且标题命中搜索意图。
+  </div>
   <div class="scroll-table">
     <table>
-      <tr><th>#</th><th>产品名称</th><th>ASIN</th><th>销量</th><th>BSR</th><th>小类排名</th><th>价格</th><th>上架时间</th><th>评论数</th><th>品牌</th></tr>
+      <tr><th>#</th><th>产品名称</th><th>ASIN</th><th>过滤来源</th><th>子ASIN数</th><th>销量</th><th>BSR</th><th>小类排名</th><th>价格</th><th>上架时间</th><th>评论数</th><th>品牌</th></tr>
       {{PRODUCT_ROWS}}
     </table>
   </div>

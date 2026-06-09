@@ -28,7 +28,15 @@ function outputDirs(taskName) {
 
 const SKILL_DIR = __dirname;
 
-const keyword = process.argv[2];
+const rawKeyword = process.argv[2];
+function firstKeyword(value) {
+  return String(value || '')
+    .split(/\s*,\s*|\s+\+\s+/)
+    .map(s => s.trim())
+    .filter(Boolean)[0] || '';
+}
+
+const keyword = firstKeyword(rawKeyword);
 const bsrDataFile = process.argv[3];
 const safeName = safeSegment(keyword || 'output');
 const defaultDirs = outputDirs(keyword || 'output');
@@ -50,7 +58,7 @@ const dirs = process.argv[4]
   : defaultDirs;
 fs.mkdirSync(dirs.data, { recursive: true });
 
-if (!keyword) {
+if (!rawKeyword || !keyword) {
   console.error('用法: node extract-seasonality.js "关键词" <BSR数据文件.json> [输出文件.json]');
   process.exit(1);
 }
@@ -393,7 +401,9 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
 
   // ─── Step 5: 输出 ───
   const output = {
+    rawKeyword,
     keyword,
+    seasonalityKeyword: keyword,
     analyzedAt: new Date().toISOString(),
     seasonality,
     pickedAsins,

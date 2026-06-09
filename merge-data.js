@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const { selectTargetCategories } = require('./category-selector');
+const { selectTargetCategories, listingMatchesKeywordIntent, titleMatchesKeywordIntent } = require('./category-selector');
+const {
+  aggregateParentListings,
+  applyTargetCategoryMatch,
+  listingMatchesTargetCategories
+} = require('./parent-listing-aggregate');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -54,9 +59,6 @@ for (const file of inputFiles) {
   
   console.log(`  ${kw}: ${items.length} 条`);
 }
-
-console.log(`\n合并前总计: ${allRawData.length} 条`);
-
 // ASIN 去重
 const seenAsin = new Set();
 allRawData = allRawData.filter(item => {
@@ -66,36 +68,47 @@ allRawData = allRawData.filter(item => {
 });
 console.log(`ASIN 去重后: ${allRawData.length} 条`);
 
-// PASIN 去重：同一父体只保留 BSR 最小的那条
-const pasinMap = new Map();
-allRawData.forEach(item => {
-  const key = item.pasin || item.asin;
-  if (!pasinMap.has(key) || item.bsr < pasinMap.get(key).bsr) {
-    pasinMap.set(key, item);
-  }
-});
-const deduplicated = Array.from(pasinMap.values());
-const removedByPasin = allRawData.length - deduplicated.length;
-allRawData = deduplicated;
-if (removedByPasin > 0) console.log(`PASIN 去重: 移除 ${removedByPasin} 条变体重复，剩余 ${allRawData.length} 条`);
-console.log(`最终去重: ${allRawData.length} 条`);
+const categorySelectionSource = allRawData;
+const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords);
+const targetCategory = categorySelectionResult.targetCategory;
+const targetCategories = categorySelectionResult.targetCategories;
+const targetCategorySet = new Set(targetCategories);
+const equivalentCategorySet = new Set(
+  categorySelectionResult.categorySelection
+    .filter(d => d.functionalEquivalent)
+    .map(d => d.category)
+);
 
-// 类目过滤
+const beforeParentAggregate = allRawData.length;
+allRawData = aggregateParentListings(allRawData).map(item => applyTargetCategoryMatch(item, targetCategorySet));
+console.log(`父体 Listing 聚合: ${beforeParentAggregate} 条 ASIN/变体 → ${allRawData.length} 个父体 Listing`);
+
 const catCount = {};
-allRawData.forEach(d => {
+categorySelectionSource.forEach(d => {
   const cat = d.category || '未识别';
   catCount[cat] = (catCount[cat] || 0) + 1;
 });
 const sortedCats = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
-console.log('\n📊 类目分布 (Top 10):');
+console.log('\\n📊 类目分布（ASIN/变体明细 Top 10）:');
 sortedCats.slice(0, 10).forEach(([cat, count]) => console.log(`  [${count}] ${cat}`));
 
-const categorySelectionResult = selectTargetCategories(allRawData, keywords);
-const targetCategory = categorySelectionResult.targetCategory;
-const targetCategories = categorySelectionResult.targetCategories;
-const targetCategorySet = new Set(targetCategories);
-const filtered = allRawData.filter(d => targetCategorySet.has(d.category || '未识别'));
-const excluded = allRawData.filter(d => !targetCategorySet.has(d.category || '未识别'));
+const listingMatchesFilter = (item) => {
+  if (listingMatchesTargetCategories(item, targetCategorySet)) return true;
+  const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
+  const equivalentCategoryHit = categories.some(category => equivalentCategorySet.has(category));
+  if (!equivalentCategoryHit) return false;
+  const rescued = listingMatchesKeywordIntent(item, keywords);
+  if (rescued) {
+    const rescuedRows = (Array.isArray(item.variantRows) ? item.variantRows : [])
+      .filter(row => equivalentCategorySet.has(row.category) && keywords.some(keyword => titleMatchesKeywordIntent(row.title || item.title, keyword)));
+    item.targetMatchedCategories = [...new Set([...(item.targetMatchedCategories || []), ...rescuedRows.map(row => row.category).filter(Boolean)])];
+    item.targetMatchedChildAsins = [...new Set(rescuedRows.map(row => row.asin).filter(Boolean))];
+    item.keywordIntentRescued = true;
+  }
+  return rescued;
+};
+const filtered = allRawData.filter(d => listingMatchesFilter(d));
+const excluded = allRawData.filter(d => !listingMatchesFilter(d));
 console.log(`\n🎯 目标类目组: ${targetCategories.join(' | ')}`);
 console.log(`✅ 过滤: ${allRawData.length} → ${filtered.length} 条, 排除 ${excluded.length} 条`);
 
@@ -114,6 +127,7 @@ const output = {
   excludedCount: excluded.length,
   targetCategory,
   targetCategories,
+  equivalentCandidateCategories: [...equivalentCategorySet],
   categorySelection: categorySelectionResult.categorySelection,
   categoryDistribution: sortedCats,
   keywordStats,
