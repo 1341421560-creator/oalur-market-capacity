@@ -6,8 +6,8 @@
 3. **ASIN 价格排名趋势分析**：基于 Oalur 导出的 Excel，调用 `oalur-asin-trend` skill 生成合并趋势图
 
 输入关键词，自动完成全部数据提取和分析，生成 **2 个 HTML 报告**：
-- **报告 1**：市场容量 + 竞争分析 + 季节性 + 新品存活率（`output/日期-关键词/reports/日期_关键词_市场容量分析.html`）
-- **报告 2**：所有老品 ASIN 的 Buybox价格/Ratings数/大类BSR 趋势（`output/日期-关键词/reports/日期_关键词_ASIN趋势分析.html`）
+- **报告 1**：市场容量 + 利润快筛 + 竞争分析 + 新品存活率 + 季节性趋势（`output/日期-关键词/reports/日期_关键词_市场分析.html`）
+- **报告 2**：老品 ASIN 的 Buybox价格/Ratings数/大类BSR 趋势（`output/日期-关键词/reports/日期_关键词_ASIN生命周期趋势分析.html`）
 
 ## 数据源
 - **平台**：Oalur（鸥鹭）- https://vip.oalur.com/insight/filter/index?site=US
@@ -43,7 +43,7 @@ node skills/oalur-market-capacity/extract-data.js "Cookie Cutter,Biscuit Cutter"
 node skills/oalur-market-capacity/extract-data.js "Cookie Cutter" 10000 output/日期-Cookie-Cutter/data/cookie-data.json
 node skills/oalur-market-capacity/extract-data.js "Biscuit Cutter" 10000 output/日期-Biscuit-Cutter/data/biscuit-data.json
 
-# 合并去重（ASIN去重 + PASIN去重保留BSR最小的 + 类目过滤）
+# 合并去重（ASIN去重 + 父体 Listing 聚合 + 类目/标题意图过滤）
 node skills/oalur-market-capacity/merge-data.js output/日期-Cookie-Cutter/data/cookie-data.json output/日期-Biscuit-Cutter/data/biscuit-data.json output/日期-merged-data/data/merged-data.json
 
 # 生成报告
@@ -139,7 +139,24 @@ node skills/oalur-market-capacity/extract-data.js "Biscuit Cutter" 10000 output/
 ```
 
 
-脚本自动完成：关键词输入、BSR 设置、勾选变体、翻页提取、去重、类目过滤。
+脚本自动完成：关键词输入、BSR 设置、勾选查看其他变体、翻页提取、ASIN 去重、父体 Listing 聚合、类目/标题意图过滤。
+
+#### 查看其他变体与父体聚合规则
+
+必须在抓取第一页前确认 Oalur 的 **查看其他变体** 已勾选：
+
+1. 点击确认查询后，先检查 `.var-sku .el-checkbox` 状态。
+2. 如果未勾选，立即勾选并等待状态生效。
+3. 第一页提取前必须再次断言已勾选；失败则停止执行。
+4. 每次翻页后、提取该页前，也要再次确认已勾选。
+
+数据口径：
+- Oalur 原始行按 **ASIN/变体** 抓取。
+- 先按 ASIN 去重。
+- 再按 `pasin || parentAsin || asin` 聚合为 **父体 Listing**。
+- 父体 Listing 的代表 ASIN 默认取该父体下 **大类 BSR 最好的子 ASIN**。
+- 父体销量/销售额按所有子 ASIN 汇总。
+- 报告中的竞争数量按父体 Listing 统计，避免变体重复计算。
 
 ### Step 3: 生成分析报告（市场容量 only）
 
@@ -168,6 +185,10 @@ node skills/oalur-market-capacity/extract-seasonality.js "关键词" output/日�
 3. **老品 ASIN 月度销量趋势**：从 BSR 数据中自动选取上架 >3 年、销售额接近的 ASIN，提取近 35 个月的月度销售趋势（同时导出"价格&排名趋势" Excel）
 4. **季节性分析**：计算峰谷比、峰值月份、多年月均值，输出季节性结论
 5. **ASIN 趋势合并报告**：导出 Excel 后自动调用 `generate-asin-trends-combined.js`，生成独立的 Buybox价格/Ratings数/大类BSR 趋势 HTML
+
+#### 多关键词季节性口径
+
+如果输入多个关键词，季节性和 ABA 趋势默认使用第一个输入关键词。例如输入 `Coffee Spoon,Espresso Spoon`，Step 3 季节性使用 `Coffee Spoon`。
 
 ### Step 5: 提取 6 个月前历史数据（新品存活率）
 
@@ -233,9 +254,83 @@ node skills/oalur-market-capacity/generate-report.js output/日期-关键词/dat
 ### Step 7: 保存报告
 自动保存到：
 ```
-output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_市场容量分析.html       ← 报告1：完整分析
-output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_ASIN趋势分析.html        ← 报告2：ASIN价格排名趋势
+output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_市场分析.html              ← 报告1：完整分析
+output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_ASIN生命周期趋势分析.html   ← 报告2：ASIN价格排名趋势
 ```
+
+## 目标类目与标题意图过滤
+
+不要再用“数量最多的类目”作为唯一目标类目。当前类目过滤由 `category-selector.js` 计算关键词相关性分，并允许“功能等价候选类目 + 单 ASIN 标题意图”二次保留。
+
+### 类目评分
+
+关键词会拆成：
+- 修饰词：除最后一个词以外的 token，例如 `Coffee Spoons` 的 `coffee`
+- 产品形态词：最后一个 token，例如 `spoon`
+- 形态同义词：例如 `spoon` 可扩展为 `spoon/scoop`
+
+类目分数主要由以下部分组成：
+- 类目路径包含全部关键词 token：+85
+- 类目路径命中产品形态：+35
+- 类目叶子类目命中产品形态：+20
+- 类目路径每命中一个修饰词：+24
+- 叶子类目每命中一个修饰词：+10
+- 类目下标题强匹配率：最高 +45
+- 类目下标题部分匹配率：最高 +12
+- 类目产品数量权重：最高 +14
+
+扣分规则：
+- 只命中产品形态，但没有修饰词，且标题强匹配率 <35%：-35
+- 只命中修饰词，但没有产品形态，且标题强匹配率 <20%：-16
+- 修饰词和产品形态都没命中：-60
+
+目标类目选择门槛：
+- 分数 >= 110，且产品数 >= 3
+- 或分数 >= 180，即使产品数少于 3 也可选
+- 如果没有任何类目达标，才回退选分数最高的一个类目
+
+### 功能等价候选类目
+
+像 `Coffee Spoons` 这类搜索，`Teaspoons`、`Iced Tea Spoons`、`Measuring Spoon Sets` 可能是功能等价候选，但不能整类直接纳入目标类目。
+
+候选条件：
+- 类目路径命中产品形态词或其同义词
+- 类目路径没有命中修饰词
+- 类目下标题强匹配率 >=35%
+- 标题部分匹配率 >=70%
+- 叶子类目不能是 `rest/holder/stand/rack/organizer/case/cover` 这类配件类目
+
+候选类目内的单个父体 Listing 还必须通过标题意图：
+- 标题必须命中产品形态词，例如 `spoon/scoop`
+- 标题必须命中修饰词或其意图同义词，例如 `coffee/espresso/demitasse/cappuccino/latte/moka`
+
+通过该规则保留的父体 Listing 必须设置：
+- `keywordIntentRescued: true`
+- `targetMatchedChildAsins`
+- 报告中“过滤来源”列显示 **标题意图救回**
+
+示例：
+- `B091CHRKVH`：类目是 `Teaspoons`，标题含 `Coffee/Tea Spoons`，可被标题意图救回。
+- `B0C78BBX27`：类目也是 `Teaspoons`，但标题只有泛 `Spoon Set`，不命中 coffee/espresso 意图，应排除。
+
+## 新品统计口径
+
+父体 Listing 的代表 ASIN 仍然取 BSR 最好的子 ASIN，但新品统计不能只看代表 ASIN。
+
+新品分析必须按父体 Listing 统计，并检查父体下目标相关子 ASIN：
+- 只要目标相关子 ASIN 中存在 `<6个月`，该父体 Listing 计入新品父体。
+- 如果新品不是代表 ASIN，而是父体下某个子 ASIN，报告标记为 **父体新品子ASIN**。
+- `<12个月` 分析同理，标记为 **父体<12月子ASIN**。
+
+过滤后的 ASIN 表必须包含：
+- 过滤来源：`目标类目` / `标题意图救回`
+- 子 ASIN 数
+
+新品销量表必须包含：
+- 父体/代表 ASIN
+- 新品子 ASIN
+- 来源
+- 子 ASIN 数
 
 ## 输出格式
 
@@ -276,7 +371,7 @@ output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_ASIN趋势分析.html  
 - 进入限制：[有/无]
 - 竞争结论：[✅ 竞争适中 / ⚠️ 竞争激烈]
 
-📎 完整报告：output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_市场容量分析.html
+📎 完整报告：output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_市场分析.html
 ```
 
 ### 季节性摘要（追加在市场容量摘要之后）
@@ -294,7 +389,7 @@ Oalur 站内峰值月份：[月份列表]
 
 💡 策略建议：[旺季备货建议 / 全年运营建议]
 
-📎 完整报告（含季节性）：output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_市场容量分析.html
+📎 完整报告（含季节性）：output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_市场分析.html
 ```
 
 ## 关键技术点
@@ -306,10 +401,10 @@ Oalur 站内峰值月份：[月份列表]
 5. **el-table 提取**：用 `.el-table__body-wrapper table tbody tr` 选择器
 6. **类目路径提取**：从 titleCell 的各行中找包含 `>` 且以英文字母开头的行（排除 PASIN 行）
 7. **上架时间解析**：优先用 `listingAge`（"X年X月X天"），为空时用 `listingDate`（"YYYY-MM-DD"）计算月数差
-7. **查看其他变体**：默认关闭（取消勾选 `.var-sku .el-checkbox`），通过 PASIN 去重处理变体重复，避免销量重复计算
+7. **查看其他变体**：必须开启。第一页抓取前和每次翻页后都要确认 `.var-sku .el-checkbox` 已勾选；如果无法勾选则停止执行。
 8. **分页翻页**：点击 `.el-pager .number` 后必须等待内容变化（比较整页 ASIN 集合，不能只比较首行），不能固定等待
-9. **去重**：最终数据必须按 ASIN 去重
-10. **类目过滤**：自动取产品数最多的类目作为目标类目（如搜 Biscuit Cutter → 目标类目自动选 `Cookie Cutters`），过滤掉其他类目的产品
+9. **去重与聚合**：先按 ASIN 去重，再按父体聚合；代表 ASIN 取父体下大类 BSR 最好的子 ASIN，销量/销售额按父体汇总
+10. **类目过滤**：使用关键词相关性评分选择目标类目；功能等价候选类目只能通过单 ASIN 标题意图救回，不能整类直接纳入
 11. **排除产品存档**：过滤掉的产品也输出到结果文件（`excluded` 字段），方便复查
 
 ## 竞争分析报告包含的图表
@@ -326,8 +421,8 @@ Oalur 站内峰值月份：[月份列表]
 
 1. **不要用 OpenClaw browser tool**：edge profile CDP 连接不稳定，snapshot/evaluate 会超时
 2. **必须用 puppeteer-core 直连**：脚本在本 skill 工程目录下执行，依赖从本地 `node_modules/` 解析
-3. **"查看其他变体"默认关闭**：通过 PASIN 去重处理变体重复，避免销量重复计算
-4. **必须按类目过滤**：Oalur 搜索结果包含大量无关品类，不过滤会导致分析失真。自动取产品数最多的类目作为目标类目，排除的产品也存入结果文件
+3. **"查看其他变体"必须开启**：抓取 ASIN/变体明细后按父体 Listing 聚合，竞争数量按父体统计
+4. **必须按类目和标题意图过滤**：Oalur 搜索结果包含大量无关品类，不过滤会导致分析失真。目标类目用评分选择；功能等价候选类目内只保留标题命中搜索意图的 ASIN
 5. **分页必须等内容变化**：点击页码后轮询检查整页 ASIN 集合是否变化（不能只比较首行，否则会误判）
 6. **去重**：最终数据按 ASIN 去重
 7. **默认近30天**：时间范围通常已默认选中"近30天"，无需额外操作
@@ -361,8 +456,9 @@ Oalur 站内峰值月份：[月份列表]
 3. **再设 BSR 范围**（min=1, max=BSR上限）
 4. 再点击确认查询
 5. 等待表格刷新后检查 `总计: 非0` → 确认搜索成功
-6. 关闭"查看其他变体"勾选
-7. 开始提取数据（翻页）
+6. 勾选并确认"查看其他变体"已开启
+7. 第一页抓取前再次断言变体已开启
+8. 开始提取数据（翻页），每页抓取前都确认变体仍开启
 
 ## 完整流程示例
 
@@ -373,7 +469,7 @@ Test-NetConnection -ComputerName localhost -Port 9222 -InformationLevel Quiet
 # Step 2: 提取当前 BSR 市场数据
 node skills/oalur-market-capacity/extract-data.js "Biscuit Cutter" 10000 output/日期-Biscuit-Cutter/data/biscuit-data.json
 
-# Step 3: 提取季节性数据（会自动生成 ASIN趋势分析.html）
+# Step 3: 提取季节性数据（会自动生成 ASIN生命周期趋势分析.html）
 node skills/oalur-market-capacity/extract-seasonality.js "Biscuit Cutter" output/日期-Biscuit-Cutter/data/biscuit-data.json output/日期-Biscuit-Cutter/data/biscuit-seasonality.json
 
 # Step 4: 提取 6 个月前历史数据（用于新品存活率，如当前是 2026-06 → 2025-12）
@@ -384,8 +480,8 @@ node skills/oalur-market-capacity/generate-report.js output/日期-Biscuit-Cutte
 ```
 
 报告自动保存到：
-- `output/YYYY-MM-DD-Biscuit-Cutter/reports/YYYY-MM-DD_Biscuit-Cutter_市场容量分析.html`（报告1：完整分析）
-- `output/YYYY-MM-DD-ASIN列表/reports/YYYY-MM-DD_ASIN列表_ASIN趋势分析.html`（报告2：ASIN价格排名趋势，Step 3 自动生成）
+- `output/YYYY-MM-DD-Biscuit-Cutter/reports/YYYY-MM-DD_Biscuit-Cutter_市场分析.html`（报告1：完整分析）
+- `output/YYYY-MM-DD-Biscuit-Cutter/reports/YYYY-MM-DD_Biscuit-Cutter_ASIN生命周期趋势分析.html`（报告2：ASIN价格排名趋势，Step 3 自动生成）
 
 ## HTML 报告离线打包流程
 
