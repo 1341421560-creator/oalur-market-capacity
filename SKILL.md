@@ -8,6 +8,7 @@
 输入关键词，自动完成全部数据提取和分析，生成 **2 个 HTML 报告**：
 - **报告 1**：市场容量 + 利润快筛 + 竞争分析 + 新品存活率 + 季节性趋势（`output/日期-关键词/reports/日期_关键词_市场分析.html`）
 - **报告 2**：老品 ASIN 的 Buybox价格/Ratings数/大类BSR 趋势（`output/日期-关键词/reports/日期_关键词_ASIN生命周期趋势分析.html`）
+- **可选报告 3**：父体代表 ASIN 与子 ASIN 明细（`output/日期-关键词/reports/日期_关键词_子ASIN明细.html`）
 
 ## 数据源
 - **平台**：Oalur（鸥鹭）- https://vip.oalur.com/insight/filter/index?site=US
@@ -141,6 +142,8 @@ node skills/oalur-market-capacity/extract-data.js "Biscuit Cutter" 10000 output/
 
 脚本自动完成：关键词输入、BSR 设置、勾选查看其他变体、翻页提取、ASIN 去重、父体 Listing 聚合、类目/标题意图过滤。
 
+默认最大抓取页数为 **20 页**。Oalur 每页通常 20 条，因此单关键词最多采集约 **400 条 ASIN/变体数据**；如果实际页数少于 20 页，则按实际页数抓取。
+
 #### 查看其他变体与父体聚合规则
 
 必须在抓取第一页前确认 Oalur 的 **查看其他变体** 已勾选：
@@ -211,10 +214,26 @@ node skills/oalur-market-capacity/extract-data.js "关键词" BSR上限 output/�
 
 ⚠️ **新品存活率边界情况**：如果 6 个月前该 BSR 范围内没有上架 <6 个月的新品（即 `histNewProducts.length === 0`），说明当时没有新品存在，不存在存活率可计算。此时报告会显示「该 BSR 范围内无新品」，而不是 0% 存活率。
 
-### Step 6: 生成完整报告（市场容量 + 季节性 + 存活率）
+### Step 6: 提取 CPC/客单价比值（广告成本快判）
+
+当需要判断 CPC 广告点击单价时，禁止只看 CPC 绝对值；必须按照 `knowledge/amazon-opportunity-index-criteria.md` 使用 `CPC / 客单价 * 100%`。
+
+数据来源：Oalur ACOS 工具 `https://vip.oalur.com/tool/acos?site=US`。
 
 ```bash
-node skills/oalur-market-capacity/generate-report.js output/日期-关键词/data/数据文件.json --seasonality output/日期-关键词/data/关键词-seasonality.json --historical output/日期-关键词/data/关键词-historical.json --asin-lifecycle output/日期-关键词/data/关键词-asin-lifecycle.json
+node skills/oalur-market-capacity/extract-cpc-opportunity.js output/日期-关键词/data/关键词-asin-lifecycle.json output/日期-关键词/data/数据文件.json output/日期-关键词/data/关键词-cpc-opportunity.json
+```
+
+判定标准：
+- `<5%`：极佳
+- `5%-10%`：良好
+- `10%-15%`：一般
+- `>15%`：很差
+
+### Step 7: 生成完整报告（市场容量 + 季节性 + 存活率）
+
+```bash
+node skills/oalur-market-capacity/generate-report.js output/日期-关键词/data/数据文件.json --seasonality output/日期-关键词/data/关键词-seasonality.json --historical output/日期-关键词/data/关键词-historical.json --asin-lifecycle output/日期-关键词/data/关键词-asin-lifecycle.json --cpc-opportunity output/日期-关键词/data/关键词-cpc-opportunity.json
 ```
 
 模板文件：`skills/oalur-market-capacity/report-template.html`
@@ -251,12 +270,59 @@ node skills/oalur-market-capacity/generate-report.js output/日期-关键词/dat
 | **机会指数趋势** | `oppIndexTrend` + `productTotalNumTrend` | 前后半段对比 → 上升/稳定/下降 + 在售商品数趋势 |
 | **标品/非标品判断** | TOP3份额 + 搜索排名波动 | 标品倾向/非标品倾向/混合型 + 对应策略建议 |
 
-### Step 7: 保存报告
+TOP3 点击份额与转化份额必须按 `knowledge/amazon-selection-standard-vs-nonstandard.md` 的四象限解读，禁止简单相加：
+- 点击 >50% 且转化 >50%：头部垄断严重。
+- 点击不高但转化 >50%：转化垄断强，消费者最终选头部。
+- 点击 >50% 但转化不高：曝光集中但转化外流，可能存在差异化切入或整体转化偏低。
+- 点击 <20% 且转化 <20%：头部垄断低，但也可能代表大词流量高度分散、竞争面很广。
+
+报告中必须同时输出：最近 6 个月 TOP3 点击均值、转化均值、四象限判定、标品/非标品倾向，以及“点击和转化是不同维度，不能直接相加”的说明。
+
+### 机会指数与 CR3 量化标准（基于 `amazon-opportunity-index-criteria.md`）
+
+机会指数与在售商品数模块必须同时输出：
+- 基础机会指数原始值：`月搜索量 / 在售商品数`，优先使用 Oalur `oppIndexTrend`。
+- 行业调整系数：按 `knowledge/category-opportunity-adjustment.md` 的“选品分析用行业机会指数调整系数”匹配类目/关键词/季节性线索。
+- 行业调整后机会指数：`基础机会指数原始值 × 行业调整系数`，报告判断以该值为主。
+- 有效机会指数：`(月搜索量 × 0.9) / (48 × 0.04)`，其中 48 为前 3 页商品数，0.04 为行业平均转化率。
+- 品牌 CR3：过滤后目标市场 TOP3 品牌销量 / 总销量。
+
+基础机会指数标准：`>10` 极致蓝海；`5-10` 优质蓝海；`2-5` 轻度竞争；`1-2` 中度竞争；`0.5-1` 中高竞争；`0.2-0.5` 红海；`<0.2` 极致红海。
+
+行业调整系数必须展示命中的类目类型、系数和原因；命中多条规则时取更保守的较低系数。有效机会指数只用于判断前 3 页有效流量池规模，不替代行业调整后机会指数。
+
+有效机会指数标准：`>10000` 极佳；`5000-10000` 良好；`1000-5000` 一般；`<1000` 较差。
+
+品牌 CR3 标准：`<40%` 低垄断；`40%-60%` 中度垄断；`>60%` 高垄断。CR3 比单纯机会指数更能说明头部品牌垄断程度，机会指数不能单独作为进入决策。
+
+### Step 8: 保存报告
 自动保存到：
 ```
 output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_市场分析.html              ← 报告1：完整分析
 output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_ASIN生命周期趋势分析.html   ← 报告2：ASIN价格排名趋势
 ```
+
+### Step 9: 可选生成子 ASIN 明细报告
+
+当用户要求“把所有父体代表 ASIN 单独输出一份报告”“输出它的子 ASIN、类目”等时，执行：
+
+```bash
+node skills/oalur-market-capacity/generate-child-asin-report.js output/日期-关键词/data/数据文件.json
+```
+
+报告自动保存到：
+
+```text
+output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_子ASIN明细.html
+```
+
+报告内容：
+- 每个过滤后的父体 Listing 一个模块
+- 父体代表 ASIN、父体 ASIN、过滤来源
+- 子 ASIN 数（不含代表 ASIN 本身）
+- 同父体 ASIN 总数
+- 所有同父体 ASIN 的标题、类目、销量、销售额、BSR、小类排名、价格、上架时间、评论数、品牌
+- “匹配依据”列显示 `目标类目` / `标题意图` / `目标类目+标题意图` / `未命中`
 
 ## 目标类目与标题意图过滤
 
@@ -303,6 +369,7 @@ output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_ASIN生命周期趋势�
 候选类目内的单个父体 Listing 还必须通过标题意图：
 - 标题必须命中产品形态词，例如 `spoon/scoop`
 - 标题必须命中修饰词或其意图同义词，例如 `coffee/espresso/demitasse/cappuccino/latte/moka`
+- `Chocolate Molds` 场景中，`chocolate` 的意图同义词包括 `candy/gummy/caramel/fondant/bonbon/truffle`
 
 通过该规则保留的父体 Listing 必须设置：
 - `keywordIntentRescued: true`
@@ -321,16 +388,17 @@ output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_ASIN生命周期趋势�
 - 只要目标相关子 ASIN 中存在 `<6个月`，该父体 Listing 计入新品父体。
 - 如果新品不是代表 ASIN，而是父体下某个子 ASIN，报告标记为 **父体新品子ASIN**。
 - `<12个月` 分析同理，标记为 **父体<12月子ASIN**。
+- 如果代表 ASIN 自身 `<12个月`，且目标相关子 ASIN 全部 `<12个月`，在 `<12个月` 列表中标记为 **纯新父体**。
 
 过滤后的 ASIN 表必须包含：
 - 过滤来源：`目标类目` / `标题意图救回`
-- 子 ASIN 数
+- 子 ASIN 数（同父体下除当前代表 ASIN 以外的 ASIN 数，不含代表 ASIN 本身）
 
 新品销量表必须包含：
 - 父体/代表 ASIN
 - 新品子 ASIN
 - 来源
-- 子 ASIN 数
+- 子 ASIN 数（不含代表 ASIN 本身）
 
 ## 输出格式
 

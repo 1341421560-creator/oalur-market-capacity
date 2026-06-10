@@ -22,7 +22,9 @@ const ACCESSORY_LEAF_TOKENS = new Set(['rest', 'holder', 'stand', 'rack', 'organ
 
 const MODIFIER_ALIASES = {
   coffee: ['coffee', 'espresso', 'demitasse', 'cappuccino', 'latte', 'moka'],
-  espresso: ['espresso', 'coffee', 'demitasse', 'cappuccino', 'latte', 'moka']
+  espresso: ['espresso', 'coffee', 'demitasse', 'cappuccino', 'latte', 'moka'],
+  chocolate: ['chocolate', 'candy', 'gummy', 'caramel', 'fondant', 'bonbon', 'truffle'],
+  candy: ['candy', 'chocolate', 'gummy', 'caramel', 'fondant', 'bonbon', 'truffle']
 };
 
 function stemToken(token) {

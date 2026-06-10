@@ -85,7 +85,7 @@ function outputDirs(taskName) {
 }
 
 // 鏈€澶х炕椤垫暟闄愬埗锛堥槻姝㈡棤闄愬惊鐜級
-const MAX_PAGES = 10;
+const MAX_PAGES = 20;
 
 // 鍝佺被搴曠嚎琛紙浠?SKILL.md 鍚屾缁存姢锛?
 const CATEGORY_BSR_TABLE = [

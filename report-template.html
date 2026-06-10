@@ -140,10 +140,13 @@
     <li><strong>产品数量</strong>：过滤后 {{FILTERED_COUNT}} 个产品 {{STEP1}}</li>
     <li><strong>头部集中度</strong>：前10名 BSR 范围 {{TOP10_BSR}}</li>
     <li><strong>断层判断</strong>：{{GAP_TEXT}} {{STEP3}}</li>
-    <li><strong>新品机会</strong>：近6个月新品 {{NEW_COUNT}} 个（{{NEW_PCT}}%）{{STEP4}}</li>
-    <li><strong>最终结论</strong>：{{CONCLUSION}}</li>
+    <li><strong>新品观察</strong>：近6个月新品 {{NEW_COUNT}} 个（{{NEW_PCT}}%）{{STEP4}}</li>
+    <li><strong>容量等级</strong>：{{CONCLUSION}}</li>
   </ol>
   <div class="conclusion {{CONCLUSION_CLASS}}">{{CONCLUSION}}<br><small>{{REASON}}</small></div>
+  <div style="margin-top:12px;padding:10px 12px;background:#f0f5ff;border-radius:8px;font-size:12px;color:#555;line-height:1.8;">
+    <strong>容量判断标准：</strong>{{CAPACITY_STANDARD_TEXT}}
+  </div>
 </div>
 
 <h1 style="margin-top:32px;">💵 利润快筛</h1>
@@ -165,7 +168,7 @@
     </div>
     <div class="metric-card {{TOP3_BRAND_CLASS}}">
       <div class="num">{{TOP3_BRAND_SHARE}}%</div>
-      <div class="desc">TOP3 品牌份额（&lt;45%）</div>
+      <div class="desc">品牌 CR3（&lt;40%）</div>
     </div>
     <div class="metric-card {{BRAND_DISP_CLASS}}">
       <div class="num">{{BRAND_DISPERSION}}%</div>
@@ -301,16 +304,33 @@
 <!-- 竞争综合结论 -->
 <div class="card">
   <h2>🎯 竞争综合判断</h2>
-  <ol style="line-height:2;">
-    {{COMP_REASONS}}
-  </ol>
-  <div class="conclusion {{COMP_CONCLUSION_CLASS}}">{{COMP_CONCLUSION}}<br><small>详见上方各项指标分析</small></div>
+  <div class="conclusion {{COMP_CONCLUSION_CLASS}}" style="font-size:16px;text-align:left;line-height:1.8;">{{COMP_COMPACT_SUMMARY}}</div>
+  <table style="margin-top:16px;">
+    <tr><th>维度</th><th>当前值</th><th>判断标准</th><th>判定</th><th>说明</th></tr>
+    {{COMP_CHECK_ROWS}}
+  </table>
+  <div style="margin-top:12px;padding:10px 12px;background:#f0f5ff;border-radius:8px;font-size:12px;color:#555;line-height:1.8;">
+    竞争综合判断只保留关键维度，避免和上方图表重复。FBA/FBM 是履约方式，不作为垄断指标；只有亚马逊自营占比过高、品牌/单品集中度过高、评论壁垒过高时才构成实质进入压力。
+  </div>
 </div>
 
 {{COMP_STANDARDS_REF}}
 
 <h1 style="margin-top:32px;">🌱 新品存活率</h1>
 {{SURVIVAL_HTML}}
+
+<div class="card">
+  <h2>新品存活综合总结</h2>
+  <div style="padding:14px;background:#f0f5ff;border-radius:8px;font-size:13px;line-height:1.9;color:#555;">
+    {{SURVIVAL_INTEGRATED_SUMMARY}}
+  </div>
+  <div style="margin-top:12px;padding:12px;background:#f9f9f9;border-radius:8px;font-size:12px;line-height:1.8;color:#666;">
+    <strong>判断口径：</strong>6 个月新品存活率只能说明“历史新品是否继续留在当前 BSR 范围”，不能单独证明老品/头部压制。需要同时看近1年产品销量分析：<br>
+    • 近1年产品占比 ≥15%、销量占比 ≥20%、销量中位数 ≥全市场中位数 80%：近1年新品承接强。<br>
+    • 近1年产品占比 ≥8%、销量占比 ≥10%、销量中位数 ≥全市场中位数 50%：近1年新品有承接。<br>
+    • 低于以上标准：近1年新品承接弱。
+  </div>
+</div>
 
 <!-- 新品销量分析（<6个月） -->
 <div class="card">
@@ -354,8 +374,11 @@
     • 合计销量：{{UNDER12M_TOTAL}}（占总市场 {{UNDER12M_SHARE}}%）<br>
     <span style="color:#666;">全市场销量中位数：{{SALES_MEDIAN}} | 总销量：{{TOTAL_SALES}}</span>
   </div>
+  <div style="margin-top:12px;padding:12px;background:#f0f5ff;border-radius:8px;font-size:13px;line-height:1.8;color:#555;">
+    <strong>近1年新品承接判断：</strong>{{UNDER12M_SUMMARY}}
+  </div>
   <table style="margin-top:16px;">
-    <tr><th>#</th><th>父体/代表ASIN</th><th>&lt;12月子ASIN</th><th>来源</th><th>子ASIN数</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>上架时间</th></tr>
+    <tr><th>#</th><th>父体/代表ASIN</th><th>&lt;12月子ASIN列表</th><th>来源</th><th>纯新父体</th><th>子ASIN数</th><th>品牌</th><th>月销量</th><th>市场占比</th><th>最新上架时间</th></tr>
     {{UNDER12M_ROWS}}
   </table>
 </div>

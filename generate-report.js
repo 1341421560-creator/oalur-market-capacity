@@ -127,6 +127,52 @@ function keywordRecommendationHtml(recommendation, embedded = false) {
 </div>`;
 }
 
+function opportunityAdjustmentForContext(context) {
+  const text = [
+    context.keyword,
+    context.category,
+    context.seasonalityType
+  ].filter(Boolean).join(' ').toLowerCase();
+  const matches = [];
+  const has = (...terms) => terms.some(term => text.includes(term));
+
+  if (has('baby', 'kids', 'medical', 'health', 'food contact', 'food grade', 'silicone mold')) {
+    matches.push({ coefficient: 0.7, type: '食品接触 / 儿童 / 医疗相关', reason: '命中食品接触或安全合规相关线索，按更保守系数处理' });
+  }
+  if (String(context.seasonalityType || '').includes('强季节性')) {
+    matches.push({ coefficient: 0.8, type: '季节性强类目', reason: '报告判定为强季节性，旺季机会指数可能虚高' });
+  }
+  if (has('pet supplies', 'pet food', 'treat', 'litter', 'pad refill')) {
+    matches.push({ coefficient: 0.8, type: '宠物消耗品', reason: '复购强但广告和品牌竞争较强' });
+  }
+  if (has('paper', 'tissue', 'disposable', 'refill', 'filter', 'consumable')) {
+    matches.push({ coefficient: 0.8, type: '刚需消耗品', reason: '复购强但竞争通常更激烈' });
+  }
+  if (has('beauty', 'personal care', 'skincare', 'makeup', 'hair care')) {
+    matches.push({ coefficient: 0.9, type: '美妆个护', reason: '品牌信任壁垒较高' });
+  }
+  if (has('clothing', 'shoes', 'jewelry', 'apparel', 'fashion')) {
+    matches.push({ coefficient: 0.9, type: '服饰鞋包', reason: '退货率和尺码复杂度较高' });
+  }
+  if (has('electronics', 'computers', 'camera', 'cell phones', 'bluetooth', 'charger')) {
+    matches.push({ coefficient: 1.2, type: '3C / 电子产品', reason: '客单价和利润空间可能更高' });
+  }
+  if (has('tools & home improvement', 'industrial & scientific', 'hardware')) {
+    matches.push({ coefficient: 1.1, type: '工具 / 家装', reason: '功能型强，客单价可做高' });
+  }
+  if (has('replacement', 'accessory', 'parts', 'specialized', 'niche')) {
+    matches.push({ coefficient: 1.5, type: '小众利基 / 专业配件', reason: '搜索量小但竞争少，允许较低原始机会指数' });
+  }
+  if (has('home & kitchen', 'kitchen & dining', 'bakeware', 'dining & entertaining')) {
+    matches.push({ coefficient: 1.0, type: '家居日用 / 厨房用品', reason: '通用基准类目，不额外放宽或收紧' });
+  }
+
+  if (!matches.length) {
+    return { coefficient: 1.0, type: '默认通用类目', reason: '未命中特定类目系数，默认 1.0' };
+  }
+  return matches.sort((a, b) => a.coefficient - b.coefficient)[0];
+}
+
 function productTitle(d) {
   return d?.title || d?.productTitle || d?.productName || d?.name || d?.itemName || d?.asin || '无标题';
 }
@@ -187,6 +233,21 @@ let lifecycleData = null;
 if (lifecycleFile && fs.existsSync(lifecycleFile)) {
   lifecycleData = JSON.parse(fs.readFileSync(lifecycleFile, 'utf-8'));
   console.log('馃搨 宸插姞杞界敓鍛藉懆鏈熸暟鎹?', lifecycleFile, '|', lifecycleData.products?.length || 0, '涓?ASIN');
+}
+
+const cpcIdx = process.argv.indexOf('--cpc-opportunity');
+let cpcOpportunityFile = cpcIdx > -1 ? process.argv[cpcIdx + 1] : null;
+if (!cpcOpportunityFile) {
+  const dataDir = path.dirname(resolvedDataPath);
+  const autoFile = fs.existsSync(dataDir)
+    ? fs.readdirSync(dataDir).find(file => /cpc-opportunity\.json$/i.test(file))
+    : null;
+  if (autoFile) cpcOpportunityFile = path.join(dataDir, autoFile);
+}
+let cpcOpportunityData = null;
+if (cpcOpportunityFile && fs.existsSync(cpcOpportunityFile)) {
+  cpcOpportunityData = JSON.parse(fs.readFileSync(cpcOpportunityFile, 'utf-8'));
+  console.log('已加载 CPC/客单价数据:', cpcOpportunityFile, '|', cpcOpportunityData.products?.length || 0, '个 ASIN');
 }
 
 const data = jsonData.data;
@@ -252,6 +313,12 @@ function enrichParentNewVariantInfo(d) {
     .map(row => ({ ...row, ageMonths: parseAge(row) }))
     .filter(row => row.ageMonths >= 0 && row.ageMonths < 12)
     .sort((a, b) => a.ageMonths - b.ageMonths);
+  const rowsWithAge = rows.map(row => ({ ...row, ageMonths: parseAge(row) }));
+  const representativeAgeMonths = parseAge(d);
+  d.isPureUnder12mParent = representativeAgeMonths >= 0
+    && representativeAgeMonths < 12
+    && rowsWithAge.length > 0
+    && rowsWithAge.every(row => row.ageMonths >= 0 && row.ageMonths < 12);
   d.relevantChildAsinCount = new Set(rows.map(row => row.asin).filter(Boolean)).size || d.childAsinCount || 1;
   d.newChildAsins = [...new Set(newRows.map(row => row.asin).filter(Boolean))];
   d.under12mChildAsins = [...new Set(under12Rows.map(row => row.asin).filter(Boolean))];
@@ -271,6 +338,15 @@ function enrichParentNewVariantInfo(d) {
 }
 
 data.forEach(enrichParentNewVariantInfo);
+
+function childAsinCountExcludingRepresentative(d) {
+  const asins = Array.isArray(d.childAsins) && d.childAsins.length
+    ? d.childAsins
+    : (Array.isArray(d.variantRows) ? d.variantRows.map(row => row.asin) : []);
+  const unique = new Set(asins.filter(Boolean));
+  if (d.asin) unique.delete(d.asin);
+  return unique.size;
+}
 
 function getBsrInterval(maxRank) {
   if (maxRank <= 15000) return 1000;
@@ -383,7 +459,7 @@ if (historicalData && historicalData.data) {
         // 鍒ゅ畾锛氱煡璇嗗簱鏍囧噯
         level: parseFloat(survivalRate) >= 60 ? '非常健康' :
                parseFloat(survivalRate) >= 35 ? '正常' :
-               parseFloat(survivalRate) >= 25 ? '有竞争压力' : '头部压制严重',
+               parseFloat(survivalRate) >= 25 ? '有竞争压力' : '存活率偏低',
         levelClass: parseFloat(survivalRate) >= 60 ? 'pass' :
                     parseFloat(survivalRate) >= 35 ? 'pass' :
                     parseFloat(survivalRate) >= 25 ? 'caution' : 'fail',
@@ -532,13 +608,39 @@ const under12mTotal = under12mData.reduce((s, d) => s + parseSalesNum(d), 0);
 const under12mShare = totalSales > 0 ? ((under12mTotal / totalSales) * 100).toFixed(1) : '0';
 const under12mMaxShare = totalSales > 0 && under12mMax > 0 ? ((under12mMax / totalSales) * 100).toFixed(1) : '0';
 const under12mMedianShare = totalSales > 0 && under12mMedian > 0 ? ((under12mMedian / totalSales) * 100).toFixed(1) : '0';
+const under12mMedianRatio = salesMedian > 0 && under12mMedian > 0 ? under12mMedian / salesMedian : 0;
+const under12mPctNum = data.length > 0 ? (under12mData.length / data.length) * 100 : 0;
+const under12mShareNum = parseFloat(under12mShare) || 0;
+const under12mLevel = under12mData.length === 0
+  ? '无近1年样本'
+  : under12mPctNum >= 15 && under12mShareNum >= 20 && under12mMedianRatio >= 0.8
+    ? '近1年新品承接强'
+    : under12mPctNum >= 8 && under12mShareNum >= 10 && under12mMedianRatio >= 0.5
+      ? '近1年新品有承接'
+      : '近1年新品承接弱';
+const under12mSummary = under12mData.length === 0
+  ? '近1年无可观察产品，无法证明新进入者能拿到销量。'
+  : `近1年产品 ${under12mData.length} 个，占过滤后 ${under12mPctNum.toFixed(1)}%；合计销量占 ${under12mShare}%；销量中位数 ${under12mMedian.toLocaleString()}，约为全市场中位数 ${(under12mMedianRatio * 100).toFixed(0)}%。判定：${under12mLevel}。`;
+const survivalIntegratedSummary = (() => {
+  if (!survivalRateData) return `${under12mSummary}未加载 6 个月历史数据，因此不能判断新品留存。`;
+  if (survivalRateData.hasNoNewProducts) return `${survivalRateData.historicalPeriod} 无历史新品，6个月存活率不适用。${under12mSummary}`;
+  const survivalWeak = survivalRateData.survivalRate < 35;
+  const under12Weak = under12mLevel === '近1年新品承接弱' || under12mLevel === '无近1年样本';
+  if (survivalWeak && under12Weak) {
+    return `6个月存活率 ${survivalRateData.survivalRateStr}，且${under12mSummary}两项同时偏弱，说明新品进入后持续留在有效 BSR 区间的难度较高，可能存在老品/头部压制。`;
+  }
+  if (survivalWeak) {
+    return `6个月存活率 ${survivalRateData.survivalRateStr} 偏低，但${under12mSummary}不能仅凭存活率下重结论，需要结合近1年样本继续观察。`;
+  }
+  return `6个月存活率 ${survivalRateData.survivalRateStr}，${under12mSummary}新品进入与留存证据相对更完整。`;
+})();
 
 // New product detail rows.
 const newProductDetails = newProductsData.map(d => ({
   asin: d.asin,
   newChildAsin: d.newestChildAsin || d.asin,
   source: d.newVariantSource || '代表ASIN新品',
-  childCount: d.relevantChildAsinCount || d.childAsinCount || 1,
+  childCount: childAsinCountExcludingRepresentative(d),
   brand: d.brand || '-',
   sales: parseSalesNum(d),
   share: totalSales > 0 ? ((parseSalesNum(d) / totalSales) * 100).toFixed(1) : '0',
@@ -549,8 +651,10 @@ const newProductDetails = newProductsData.map(d => ({
 const under12mDetails = under12mData.map(d => ({
   asin: d.asin,
   newChildAsin: d.newestUnder12mChildAsin || d.asin,
+  under12mChildAsins: Array.isArray(d.under12mChildAsins) && d.under12mChildAsins.length ? d.under12mChildAsins : [d.newestUnder12mChildAsin || d.asin],
   source: d.under12mVariantSource || '代表ASIN<12月',
-  childCount: d.relevantChildAsinCount || d.childAsinCount || 1,
+  pureUnder12mParent: d.isPureUnder12mParent,
+  childCount: childAsinCountExcludingRepresentative(d),
   brand: d.brand || '-',
   sales: parseSalesNum(d),
   share: totalSales > 0 ? ((parseSalesNum(d) / totalSales) * 100).toFixed(1) : '0',
@@ -561,16 +665,18 @@ const under12mDetails = under12mData.map(d => ({
 const hasGap = bsrDist.some(r => r.count === 0);
 let conclusion, conclusionClass, reason;
 if (data.length < 30) {
-  conclusion = '不进入';
+  conclusion = '容量偏小';
   conclusionClass = 'fail';
-  reason = '过滤后产品仅 ' + data.length + ' 个（要求 > 30），市场容量不足';
+  reason = '过滤后产品仅 ' + data.length + ' 个，低于知识库最低门槛（BSR 底线内高相关产品 >30 个），市场容量可能不足';
 } else if (hasGap) {
-  conclusion = '谨慎进入'; conclusionClass = 'caution';
-  reason = 'BSR 区间存在断层，市场结构不稳定';
+  conclusion = '容量结构异常'; conclusionClass = 'caution';
+  reason = '过滤后产品超过 30 个，但 BSR 区间存在断层，说明容量连续性或竞争结构需要复核';
 } else {
-  conclusion = '建议进入'; conclusionClass = 'pass';
-  reason = '过滤后 ' + data.length + ' 个产品，市场容量充足；新品占比 ' + newPct + '%，有机会切入';
+  conclusion = data.length >= 80 ? '容量较大' : '容量中等';
+  conclusionClass = data.length >= 80 ? 'pass' : 'caution';
+  reason = '过滤后 ' + data.length + ' 个高相关产品，超过知识库最低门槛（>30）且 BSR 分布无断层；该结论只描述容量，不代表最终进入建议';
 }
+const capacityStandardText = '知识库明确标准：BSR 底线内高相关产品数量 >30 是最低容量门槛；少于 30 可能容量不足；区间断层代表容量有限或竞争结构特殊。知识库没有严格给出“大/中/小”分级。本报告操作分级：<30=容量偏小；30-79 且无断层=容量中等；≥80 且无断层=容量较大；有断层=容量结构异常。';
 
 const avgPrice = data.length > 0 ? '$' + (data.reduce((s, d) => s + (parseFloat((d.price || '').replace('$', '')) || 0), 0) / data.length).toFixed(2) : '-';
 const maxBsrVal = data.length > 0 ? Math.max(...data.map(d => d.bsr)).toLocaleString() : '-';
@@ -637,6 +743,9 @@ const top1Brand = brandSalesSorted[0] || ['-', 0];
 const top1BrandShare = totalSales > 0 ? ((top1Brand[1] / totalSales) * 100).toFixed(1) : '0';
 const top3BrandShare = totalSales > 0 ? (brandSalesSorted.slice(0, 3).reduce((s, b) => s + b[1], 0) / totalSales * 100).toFixed(1) : '0';
 const top5BrandShare = totalSales > 0 ? (brandSalesSorted.slice(0, 5).reduce((s, b) => s + b[1], 0) / totalSales * 100).toFixed(1) : '0';
+const brandCr3 = parseFloat(top3BrandShare) || 0;
+const brandCr3Level = brandCr3 < 40 ? '低垄断' : brandCr3 < 60 ? '中度垄断' : '高垄断';
+const brandCr3Standard = 'CR3 <40% = 低垄断；40%-60% = 中度垄断；>60% = 高垄断';
 // Brand dispersion outside TOP5.
 const brandDispersion = totalSales > 0 ? (100 - parseFloat(top5BrandShare)).toFixed(1) : '0';
 // 鍝佺墝鏌辩姸鍥炬暟鎹紙TOP10 鍝佺墝鎸夐攢閲忓崰姣旓級
@@ -745,10 +854,12 @@ if (parseFloat(top1BrandShare) > 30) {
 } else {
   compReasons.push('TOP1 品牌份额 ' + top1BrandShare + '%，低于 30%，无明显垄断品牌');
 }
-if (parseFloat(top3BrandShare) > 50) {
-  compReasons.push('TOP3 品牌合计 ' + top3BrandShare + '%，高于 50%，集中度高');
+if (brandCr3 >= 60) {
+  compReasons.push('品牌 CR3 ' + top3BrandShare + '%，高于 60%，高垄断');
+} else if (brandCr3 >= 40) {
+  compReasons.push('品牌 CR3 ' + top3BrandShare + '%，处于 40%-60%，中度垄断');
 } else {
-  compReasons.push('TOP3 品牌合计 ' + top3BrandShare + '%，低于 50%，品牌竞争分散');
+  compReasons.push('品牌 CR3 ' + top3BrandShare + '%，低于 40%，品牌竞争分散');
 }
 if (parseFloat(brandDispersion) > 40) {
   compReasons.push('品牌分散度 ' + brandDispersion + '%，高于 40%，属于竞争型市场');
@@ -785,8 +896,67 @@ if (parseFloat(lowReviewPct) > 30) {
 }
 compReasons.push('<strong>知识库要点：</strong>评论壁垒需同时看前 20 平均值、中位数、低评论产品数量；FBA/FBM 不等同垄断，只有亚马逊自营占比过高才构成平台强势介入。');
 
+function passText(ok) {
+  return ok ? '<span style="color:#237804;font-weight:600;">通过</span>' : '<span style="color:#ad6800;font-weight:600;">需关注</span>';
+}
+
+const compCheckRows = [
+  {
+    dim: '单品集中度',
+    current: `TOP1 ${top1ItemShare}%；TOP3 ${top3ItemShare}%`,
+    standard: 'TOP1 <30%；TOP3 <45%',
+    result: passText(parseFloat(top1ItemShare) < 30 && parseFloat(top3ItemShare) < 45),
+    note: parseFloat(top3ItemShare) < 45 ? '头部单品未形成明显垄断。' : '头部单品拿走较多销量，跟卖/同质化风险高。'
+  },
+  {
+    dim: '品牌 CR3',
+    current: `TOP1 ${top1BrandShare}%；CR3 ${top3BrandShare}%（${brandCr3Level}）`,
+    standard: brandCr3Standard,
+    result: passText(brandCr3 < 40),
+    note: brandCr3 < 40 ? '品牌 CR3 低，头部品牌未形成强垄断。' : brandCr3 < 60 ? '中度垄断，需要差异化竞争。' : '高垄断，新品牌进入压力大。'
+  },
+  {
+    dim: '品牌分散度',
+    current: `${brandDispersion}%`,
+    standard: '>40%',
+    result: passText(parseFloat(brandDispersion) > 40),
+    note: parseFloat(brandDispersion) > 40 ? '非头部品牌仍有较大销量空间。' : '尾部空间偏小。'
+  },
+  {
+    dim: '评论壁垒',
+    current: `前20均评 ${top20AvgReviews}；中位数 ${reviewMedian.toLocaleString()}；前20低评 ${top20LowReviewCount} 个`,
+    standard: '前20均评 <600；中位数 <350；前20低评 >=3',
+    result: passText(top20AvgReviews !== '-' && parseInt(top20AvgReviews.replace(/,/g, '')) < 600 && reviewMedian < 350 && top20LowReviewCount >= 3),
+    note: '评论壁垒决定新品转化和自然排名追赶成本。'
+  },
+  {
+    dim: '平台介入',
+    current: `${topSellerType[0]} ${topSellerShare}%`,
+    standard: '亚马逊自营 <50%',
+    result: passText(!(topSellerType[0] === '亚马逊自营' && parseFloat(topSellerShare) > 50)),
+    note: 'FBA/FBM 是履约方式，不等同平台垄断。'
+  },
+  {
+    dim: '新品活跃度',
+    current: `<6个月新品 ${newProductsData.length} 个（${newPct}%）；<12个月产品 ${under12mData.length} 个（${under12mPctNum.toFixed(1)}%）`,
+    standard: '<6个月 >10% 或 <12个月 >=8%',
+    result: passText(parseFloat(newPct) > 10 || under12mPctNum >= 8),
+    note: '新品活跃度需要与销量承接一起判断。'
+  }
+];
+
+const compCheckRowsHtml = compCheckRows.map(row => `
+  <tr>
+    <td>${row.dim}</td>
+    <td>${row.current}</td>
+    <td>${row.standard}</td>
+    <td>${row.result}</td>
+    <td>${row.note}</td>
+  </tr>
+`).join('');
+
 // 缁煎悎缁撹锛團BA/FBM 鏄墿娴佹柟寮忥紝涓嶇畻鍨勬柇锛涘彧鏈変簹椹€婅嚜钀ユ垨鍗曚竴鍝佺墝/鍗曞搧鍗犵粷瀵逛紭鍔挎墠绠楀瀯鏂級
-const hasMonopoly = parseFloat(top1ItemShare) > 30 || parseFloat(top3BrandShare) > 50;
+const hasMonopoly = parseFloat(top1ItemShare) > 30 || brandCr3 >= 60;
 const isAmazonMonopoly = topSellerType[0] === '亚马逊自营' && parseFloat(topSellerShare) > 50;
 if (isAmazonMonopoly) {
   compConclusion = '亚马逊自营强势介入，建议放弃';
@@ -804,6 +974,7 @@ if (isAmazonMonopoly) {
   compConclusion = '竞争中等，需要差异化切入';
   compConclusionClass = 'caution';
 }
+const compCompactSummary = `${compConclusion}。核心证据：TOP3 单品 ${top3ItemShare}%，品牌 CR3 ${top3BrandShare}%（${brandCr3Level}），品牌分散度 ${brandDispersion}%，前20平均评论 ${top20AvgReviews}，<12个月产品销量占比 ${under12mShare}%。`;
 
 // Competition standards reference from the local knowledge base.
 const compStandardsRef = `
@@ -885,6 +1056,9 @@ const replacements = {
   '{{UNDER12M_SHARE}}': under12mShare,
   '{{UNDER12M_MAX_SHARE}}': under12mMaxShare,
   '{{UNDER12M_MEDIAN_SHARE}}': under12mMedianShare,
+  '{{UNDER12M_SUMMARY}}': under12mSummary,
+  '{{UNDER12M_LEVEL}}': under12mLevel,
+  '{{SURVIVAL_INTEGRATED_SUMMARY}}': survivalIntegratedSummary,
   '{{TIME_RANGE}}': jsonData.timeFilter || '最近30天',
   '{{MAX_BSR_VAL}}': maxBsrVal,
   '{{AVG_PRICE}}': avgPrice,
@@ -893,10 +1067,11 @@ const replacements = {
   '{{GAP_TEXT}}': gapText,
   '{{STEP3}}': hasGap ? '存在断层' : '分布均匀',
   '{{NEW_COUNT}}': newProducts,
-  '{{STEP4}}': parseFloat(newPct) > 10 ? '有机会' : '新品偏少',
+  '{{STEP4}}': parseFloat(newPct) > 10 ? '新品活跃' : '新品偏少',
   '{{CONCLUSION}}': conclusion,
   '{{CONCLUSION_CLASS}}': conclusionClass,
   '{{REASON}}': reason,
+  '{{CAPACITY_STANDARD_TEXT}}': capacityStandardText,
   '{{BSR_LABELS}}': JSON.stringify(bsrDist.map(r => r.label)),
   '{{BSR_DATA}}': JSON.stringify(bsrDist.map(r => r.count)),
   '{{AGE_LABELS}}': JSON.stringify(ageDist.map(r => r.label)),
@@ -911,7 +1086,7 @@ const replacements = {
   '{{TOP3_ITEM_SHARE}}': top3ItemShare,
   '{{TOP1_ITEM_CLASS}}': parseFloat(top1ItemShare) > 30 ? 'warn' : 'ok',
   '{{TOP3_ITEM_CLASS}}': parseFloat(top3ItemShare) > 45 ? 'warn' : 'ok',
-  '{{TOP3_BRAND_CLASS}}': parseFloat(top3BrandShare) > 50 ? 'warn' : 'ok',
+  '{{TOP3_BRAND_CLASS}}': brandCr3 >= 40 ? 'warn' : 'ok',
   '{{BRAND_DISP_CLASS}}': parseFloat(brandDispersion) > 40 ? 'ok' : 'warn',
   '{{TOP1_ITEM_REV_SHARE}}': top1ItemRevShare,
   '{{TOP1_ITEM_REV_ASIN}}': top1ItemRevAsin,
@@ -933,6 +1108,8 @@ const replacements = {
   '{{TOP_SELLER_SHARE}}': topSellerShare,
   '{{COMP_CONCLUSION}}': compConclusion,
   '{{COMP_CONCLUSION_CLASS}}': compConclusionClass,
+  '{{COMP_CHECK_ROWS}}': compCheckRowsHtml,
+  '{{COMP_COMPACT_SUMMARY}}': compCompactSummary,
   '{{COMP_STANDARDS_REF}}': '',
   // Survival rate.
   '{{SURVIVAL_RATE}}': survivalRateData ? survivalRateData.survivalRateStr : '未分析',
@@ -982,8 +1159,8 @@ const replacements = {
   '{{PRICE_INSIGHT}}': '',
 };
 
-// Competition standards reference.
-replacements['{{COMP_STANDARDS_REF}}'] = compStandardsRef;
+// Competition standards are rendered in the compact competition table.
+replacements['{{COMP_STANDARDS_REF}}'] = '';
 
 // ============ Knowledge insights ============
 
@@ -1039,6 +1216,48 @@ const profitRows = profitDetails
     </tr>`;
   }).join('\n');
 
+function cpcRatioStyle(grade) {
+  if (grade === '极佳' || grade === '良好') return 'color:#237804;font-weight:600;';
+  if (grade === '一般') return 'color:#ad6800;font-weight:600;';
+  return 'color:#cf1322;font-weight:600;';
+}
+
+const cpcSummary = cpcOpportunityData?.summary || null;
+const cpcProducts = Array.isArray(cpcOpportunityData?.products) ? cpcOpportunityData.products : [];
+const cpcOpportunityBlock = cpcSummary ? `
+  <div style="margin-top:18px;padding:14px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;">
+    <h3 style="margin-top:0;">CPC/客单价比值（广告成本快判）</h3>
+    <div class="metric-grid">
+      <div class="metric"><div class="value">${cpcSummary.avgCpc == null ? '未采集' : '$' + Number(cpcSummary.avgCpc).toFixed(2)}</div><div class="label">平均 CPC</div></div>
+      <div class="metric"><div class="value">${cpcSummary.avgCpcPriceRatioPct == null ? '未采集' : Number(cpcSummary.avgCpcPriceRatioPct).toFixed(2) + '%'}</div><div class="label">平均 CPC/客单价</div></div>
+      <div class="metric"><div class="value">${escapeHtml(cpcSummary.grade || '未分析')}</div><div class="label">知识库判定</div></div>
+      <div class="metric"><div class="value">${cpcSummary.asinCount || cpcProducts.length}</div><div class="label">样本 ASIN</div></div>
+    </div>
+    <div style="font-size:13px;line-height:1.8;color:#555;margin-top:8px;">
+      <strong>结论：</strong>${escapeHtml(cpcSummary.conclusion || '')}<br>
+      <strong>判断标准：</strong>CPC/客单价 &lt;5% 极佳；5%-10% 良好；10%-15% 一般；&gt;15% 很差。单看 CPC 绝对值无意义，必须结合客单价。
+    </div>
+    <div class="scroll-table" style="margin-top:12px;">
+      <table>
+        <tr><th>ASIN</th><th>售价</th><th>CPC</th><th>CPC/客单价</th><th>判定</th><th>类目</th></tr>
+        ${cpcProducts.map(item => `
+          <tr>
+            <td><a href="https://www.amazon.com/dp/${escapeHtml(item.asin)}" target="_blank">${escapeHtml(item.asin)}</a></td>
+            <td>${item.price == null ? '-' : '$' + Number(item.price).toFixed(2)}</td>
+            <td>${item.avgCpc == null ? '-' : '$' + Number(item.avgCpc).toFixed(2)}</td>
+            <td>${item.cpcPriceRatioPct == null ? '-' : Number(item.cpcPriceRatioPct).toFixed(2) + '%'}</td>
+            <td><span style="${cpcRatioStyle(item.grade)}">${escapeHtml(item.grade || '-')}</span></td>
+            <td style="max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(item.category || '')}">${escapeHtml(item.category || '-')}</td>
+          </tr>`).join('')}
+      </table>
+    </div>
+  </div>
+` : `
+  <div style="margin-top:18px;padding:12px;background:#fff7e6;border:1px solid #ffd591;border-radius:8px;font-size:13px;color:#555;">
+    <strong>CPC/客单价比值：</strong>未加载 CPC 数据。可运行 <code>extract-cpc-opportunity.js</code> 生成 <code>*-cpc-opportunity.json</code> 后重新生成报告。
+  </div>
+`;
+
 replacements['{{PROFIT_BLOCK}}'] = `
 <div class="card">
   <h2>利润快筛（FBA & 毛利率）</h2>
@@ -1058,6 +1277,21 @@ replacements['{{PROFIT_BLOCK}}'] = `
     ${profitConclusion}<br>
     <small>知识库标准：美国站毛利率 ≥35% 为底线，≥40% 更稳；售价最好达到产品成本价 4-5 倍，有效成本率需 &gt;100%。当前 Oalur 字段只能做 FBA 与毛利率快筛，采购成本、头程、包装、CPC 和有效成本率仍需补采后复核。</small>
   </div>
+  <div style="margin-top:16px;padding:12px;background:#f9f9f9;border-radius:8px;">
+    <strong>利润快筛量化标准：</strong>
+    <table style="margin-top:10px;">
+      <tr><th>指标</th><th>通过/稳健</th><th>谨慎</th><th>不通过</th><th>当前值</th></tr>
+      <tr><td>毛利率</td><td>≥40%</td><td>35%-40%</td><td>&lt;35%</td><td>${avgMarginPct == null ? '未采集' : avgMarginPct.toFixed(1) + '%'}</td></tr>
+      <tr><td>销量加权毛利率</td><td>≥40%</td><td>35%-40%</td><td>&lt;35%</td><td>${salesWeightedMarginPct == null ? '未采集' : salesWeightedMarginPct.toFixed(1) + '%'}</td></tr>
+      <tr><td>低毛利产品占比</td><td>0 个</td><td>≤15%</td><td>&gt;15%</td><td>${marginBelow35} 个（${data.length ? (marginBelow35 / data.length * 100).toFixed(1) : '0'}%）</td></tr>
+      <tr><td>CPC/客单价</td><td>&lt;10%</td><td>10%-15%</td><td>&gt;15%</td><td>${cpcSummary?.avgCpcPriceRatioPct == null ? '未采集' : Number(cpcSummary.avgCpcPriceRatioPct).toFixed(2) + '%'}</td></tr>
+      <tr><td>FBA/售价</td><td>&lt;25%</td><td>25%-35%</td><td>&gt;35%</td><td>${avgFbaRatio == null ? '未采集' : avgFbaRatio.toFixed(1) + '%'}</td></tr>
+    </table>
+    <div style="font-size:12px;color:#666;line-height:1.8;margin-top:8px;">
+      来源：毛利率与售价倍数来自本地知识库利润标准；CPC/客单价来自 <code>knowledge/amazon-opportunity-index-criteria.md</code>；FBA/售价为报告操作阈值，用于识别低客单价下物流费用挤压利润的风险。
+    </div>
+  </div>
+  ${cpcOpportunityBlock}
   <div class="scroll-table" style="margin-top:16px;">
     <table>
       <tr><th>#</th><th>ASIN</th><th>产品名称</th><th>售价</th><th>FBA</th><th>FBA/售价</th><th>毛利率</th><th>月销量</th><th>快筛</th></tr>
@@ -1096,9 +1330,13 @@ replacements['{{NEW_PRODUCT_ROWS}}'] = newProductDetails.map((d, i) =>
 ).join('\n');
 
 // Under-12-month product detail rows.
-replacements['{{UNDER12M_ROWS}}'] = under12mDetails.map((d, i) =>
-  '<tr><td>' + (i + 1) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td><a href="https://www.amazon.com/dp/' + d.newChildAsin + '" target="_blank">' + d.newChildAsin + '</a></td><td>' + d.source + '</td><td>' + d.childCount + '</td><td>' + d.brand + '</td><td>' + d.sales.toLocaleString() + '</td><td>' + d.share + '%</td><td>' + d.age + '个月</td></tr>'
-).join('\n');
+replacements['{{UNDER12M_ROWS}}'] = under12mDetails.map((d, i) => {
+  const under12mLinks = [...new Set(d.under12mChildAsins.filter(Boolean))]
+    .map(asin => '<a href="https://www.amazon.com/dp/' + asin + '" target="_blank">' + asin + '</a>')
+    .join('<br>');
+  const pureTag = d.pureUnder12mParent ? '<span style="color:#237804;font-weight:600;">纯新父体</span>' : '-';
+  return '<tr><td>' + (i + 1) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + under12mLinks + '</td><td>' + d.source + '</td><td>' + pureTag + '</td><td>' + d.childCount + '</td><td>' + d.brand + '</td><td>' + d.sales.toLocaleString() + '</td><td>' + d.share + '%</td><td>' + d.age + '个月</td></tr>';
+}).join('\n');
 
 // Excluded product rows.
 replacements['{{EXCLUDED_ROWS}}'] = excluded.map((d, i) => {
@@ -1116,7 +1354,7 @@ const kwSourceRows = kwSourceData.map((k, i) =>
 
 // Product detail rows.
 replacements['{{PRODUCT_ROWS}}'] = data.sort((a, b) => a.bsr - b.bsr).map((d, i) =>
-  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + (d.keywordIntentRescued ? '<span style="color:#ad6800;font-weight:600;">标题意图救回</span>' : '目标类目') + '</td><td>' + (d.relevantChildAsinCount || d.childAsinCount || 1) + '</td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + d.ratings + '</td><td>' + d.brand + '</td></tr>'
+  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + (d.keywordIntentRescued ? '<span style="color:#ad6800;font-weight:600;">标题意图救回</span>' : '目标类目') + '</td><td>' + childAsinCountExcludingRepresentative(d) + '</td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + d.ratings + '</td><td>' + d.brand + '</td></tr>'
 ).join('\n');
 replacements['{{KW_SOURCE_ROWS}}'] = kwSourceRows;
 
@@ -1623,11 +1861,119 @@ if (seasonalityData && seasonalityData.seasonality) {
   const productAnalysisText = productChange
     ? `在售商品数从前半段均值 ${productChange.avgFirst.toFixed(0)} 变为后半段 ${productChange.avgSecond.toFixed(0)}，变化 ${productChange.deltaPct == null ? '无法计算' : productChange.deltaPct.toFixed(1) + '%'}。${productChange.deltaPct != null && productChange.deltaPct > 10 ? '供给端明显增加，后续竞争和广告成本可能上升。' : productChange.deltaPct != null && productChange.deltaPct < -10 ? '供给端减少，可能存在出清或需求降温，需要结合搜索量判断。' : '供给端相对稳定。'}`
     : '在售商品数历史点不足，暂不能形成趋势判断。';
+  const classifyTop3Share = (click, convert) => {
+    if (!Number.isFinite(click) || !Number.isFinite(convert)) {
+      return {
+        level: '未采集',
+        quadrant: '数据不足',
+        standardType: '未判断',
+        note: '缺少 TOP3 点击份额或转化份额，不能判断头部垄断度。'
+      };
+    }
+    if (click > 50 && convert > 50) {
+      return {
+        level: '头部垄断严重',
+        quadrant: '点击 >50% 且转化 >50%',
+        standardType: '标品/强头部倾向',
+        note: '主要曝光和成交都被 TOP3 产品拿走，很难直接和头部竞争。'
+      };
+    }
+    if (click <= 50 && convert > 50) {
+      return {
+        level: '转化垄断强',
+        quadrant: '点击不高但转化 >50%',
+        standardType: '强头部倾向',
+        note: 'TOP3 未拿走主要曝光，但消费者最终明显选择头部，说明头部 Listing 转化能力强。'
+      };
+    }
+    if (click > 50 && convert <= 50) {
+      return {
+        level: '曝光集中但转化外流',
+        quadrant: '点击 >50% 但转化不高',
+        standardType: '混合型',
+        note: 'TOP3 获得主要曝光，但成交被其他竞品分走，可能存在价格、变体、评价或差异化切入空间，也可能是整体转化率偏低。'
+      };
+    }
+    if (click < 20 && convert < 20) {
+      return {
+        level: '头部垄断低',
+        quadrant: '点击 <20% 且转化 <20%',
+        standardType: '非标/长尾分散倾向',
+        note: '头部产品没有明显垄断，但也可能代表大词流量高度分散、竞争面很广。'
+      };
+    }
+    return {
+      level: '中等集中度',
+      quadrant: '20%-50% 区间',
+      standardType: '混合型',
+      note: '市场有一定集中度但未形成强垄断，需要结合核心竞品数、CPC、评论壁垒和新品存活率判断。'
+    };
+  };
+  const top3ShareClass = classifyTop3Share(avgClick, avgConvert);
   const top3AnalysisText = avgClick == null || avgConvert == null
     ? 'TOP3 点击/转化数据不足，不能判断头部流量和成交集中度。'
-    : `${avgClick > 50 || avgConvert > 50 ? '头部集中风险偏高。' : avgClick < 20 && avgConvert < 20 ? '头部集中度较低，但也可能代表流量高度分散、竞争面更广。' : '头部集中度中等。'}最近 6 个月 TOP3 点击份额均值 ${avgClick.toFixed(1)}%，转化份额均值 ${avgConvert.toFixed(1)}%。点击份额代表曝光集中度，转化份额代表成交集中度，二者都需要和广告 CPC、评论壁垒一起判断。`;
-  const oppStandardText = '机会指数上升且在售商品数稳定或下降，代表需求相对供给改善；机会指数下降且在售商品数上升，代表供给挤压或需求走弱；变化幅度超过 10% 视为需要重点关注。';
-  const top3StandardText = 'TOP3 点击或转化份额 >50% 为头部集中风险偏高；两者均 <20% 为头部垄断弱但流量分散；20%-50% 为中等集中度，需要结合 CPC、评论壁垒和新品存活率判断。';
+    : `最近 6 个月 TOP3 点击份额均值 ${avgClick.toFixed(1)}%，转化份额均值 ${avgConvert.toFixed(1)}%，判定为“${top3ShareClass.level}”（${top3ShareClass.quadrant}）。${top3ShareClass.note} 标品/非标品倾向：${top3ShareClass.standardType}。点击份额代表曝光集中度，转化份额代表成交集中度，二者是不同维度，不能直接相加得出结论。`;
+  const classifyBasicOpportunity = (value) => {
+    if (!Number.isFinite(value)) return { level: '未采集', note: '缺少基础机会指数' };
+    if (value > 10) return { level: '极致蓝海', note: '需求远大于供给，但需排查专利、季节性爆发或头部垄断' };
+    if (value >= 5) return { level: '优质蓝海', note: '需求旺盛，竞争较小' };
+    if (value >= 2) return { level: '轻度竞争', note: '供需平衡偏需求端' };
+    if (value >= 1) return { level: '中度竞争', note: '供需基本平衡，需要差异化' };
+    if (value >= 0.5) return { level: '中高竞争', note: '供给略大于需求' };
+    if (value >= 0.2) return { level: '红海市场', note: '供给明显大于需求' };
+    return { level: '极致红海', note: '市场高度饱和' };
+  };
+  const classifyEffectiveOpportunity = (value) => {
+    if (!Number.isFinite(value)) return { level: '未采集', note: '缺少搜索量或公式参数' };
+    if (value > 10000) return { level: '极佳', note: '前3页每个商品理论可分到较多有效流量' };
+    if (value >= 5000) return { level: '良好', note: '竞争温和，Listing 达标后有出单空间' };
+    if (value >= 1000) return { level: '一般', note: '需要运营技巧和广告投入' };
+    return { level: '较差', note: '前3页有效曝光不足' };
+  };
+  const lastTrendPoint = (trend) => {
+    const entries = Object.entries(trend || {}).sort().map(([month, value]) => ({ month, value: Number(value) })).filter(item => Number.isFinite(item.value));
+    return entries.length ? entries[entries.length - 1] : null;
+  };
+  const latestOpp = lastTrendPoint(seasonalityData.oalurVolumeData?.oppIndexTrend);
+  const latestSearch = lastTrendPoint(seasonalityData.oalurVolumeData?.searchesTrend);
+  const latestProduct = lastTrendPoint(seasonalityData.oalurVolumeData?.productTotalNumTrend);
+  const latestBasicOpp = latestOpp?.value ?? (latestSearch && latestProduct && latestProduct.value > 0 ? latestSearch.value / latestProduct.value : null);
+  const oppAdjustment = opportunityAdjustmentForContext({
+    keyword: jsonData.keyword,
+    category: targetCategoryDisplay,
+    seasonalityType: sType
+  });
+  const adjustedBasicOpp = latestBasicOpp == null ? null : latestBasicOpp * oppAdjustment.coefficient;
+  const effectiveOpp = latestSearch ? (latestSearch.value * 0.9) / (48 * 0.04) : null;
+  const basicOppClass = classifyBasicOpportunity(latestBasicOpp);
+  const adjustedBasicOppClass = classifyBasicOpportunity(adjustedBasicOpp);
+  const effectiveOppClass = classifyEffectiveOpportunity(effectiveOpp);
+  const productTrendLevel = productChange?.deltaPct == null
+    ? '未分析'
+    : productChange.deltaPct > 10
+      ? '供给增加'
+      : productChange.deltaPct < -10
+        ? '供给减少'
+        : '供给稳定';
+  const oppQuantRows = `
+    <tr><td>基础机会指数（原始）</td><td>${latestBasicOpp == null ? '未采集' : latestBasicOpp.toFixed(2)}${latestOpp?.month ? `（${latestOpp.month}）` : ''}</td><td>&gt;10 极致蓝海；5-10 优质蓝海；2-5 轻度竞争；1-2 中度竞争；0.5-1 中高竞争；0.2-0.5 红海；&lt;0.2 极致红海</td><td>${basicOppClass.level}</td><td>${basicOppClass.note}</td></tr>
+    <tr><td>行业调整系数</td><td>×${oppAdjustment.coefficient.toFixed(2)}</td><td>按 knowledge/category-opportunity-adjustment.md 的选品分析行业系数；命中多条时取更保守系数</td><td>${oppAdjustment.type}</td><td>${oppAdjustment.reason}</td></tr>
+    <tr><td>行业调整后机会指数</td><td>${adjustedBasicOpp == null ? '未采集' : adjustedBasicOpp.toFixed(2)}</td><td>原始基础机会指数 × 行业调整系数，仍使用基础机会指数分档</td><td>${adjustedBasicOppClass.level}</td><td>${adjustedBasicOppClass.note}</td></tr>
+    <tr><td>有效机会指数</td><td>${effectiveOpp == null ? '未采集' : effectiveOpp.toFixed(0)}</td><td>&gt;10000 极佳；5000-10000 良好；1000-5000 一般；&lt;1000 较差</td><td>${effectiveOppClass.level}</td><td>公式：(月搜索量 × 0.9) ÷ (前3页48个商品 × 4%行业转化率)。该值用于判断有效流量池规模，不替代行业调整后机会指数。${effectiveOppClass.note}</td></tr>
+    <tr><td>在售商品数趋势</td><td>${latestProduct == null ? '未采集' : latestProduct.value.toLocaleString()}${productChange?.deltaPct == null ? '' : `；阶段变化 ${productChange.deltaPct.toFixed(1)}%`}</td><td>变化幅度 >10% 视为供给端明显变化</td><td>${productTrendLevel}</td><td>${productAnalysisText}</td></tr>
+    <tr><td>品牌 CR3</td><td>${top3BrandShare}%（${brandCr3Level}）</td><td>${brandCr3Standard}</td><td>${brandCr3Level}</td><td>CR3 比单纯机会指数更能说明头部品牌垄断程度。</td></tr>
+  `;
+  const oppDecisionText = `基础机会指数原始值为 ${latestBasicOpp == null ? '未采集' : latestBasicOpp.toFixed(2)}（${basicOppClass.level}），按“${oppAdjustment.type}”行业系数 ×${oppAdjustment.coefficient.toFixed(2)} 调整后为 ${adjustedBasicOpp == null ? '未采集' : adjustedBasicOpp.toFixed(2)}（${adjustedBasicOppClass.level}）；有效机会指数为 ${effectiveOpp == null ? '未采集' : effectiveOpp.toFixed(0)}（${effectiveOppClass.level}），品牌 CR3 为 ${top3BrandShare}%（${brandCr3Level}）。机会指数不能单独作为进入决策，需要与 CR3、评论壁垒、CPC/客单价、利润快筛和新品存活一起判断。`;
+  const oppStandardText = '基础机会指数衡量“搜索量/在售商品数”的供需关系；行业调整后机会指数按 knowledge/category-opportunity-adjustment.md 的选品分析类目系数修正原始供需比；有效机会指数用于估算前3页有效流量池规模，不替代行业调整后机会指数。知识库强调：机会指数不是越高越好，指数异常高也可能代表专利、季节性爆发或头部垄断风险；CR3 应优先作为市场进入难易度指标。';
+  const top3StandardText = '基于 knowledge/amazon-selection-standard-vs-nonstandard.md：点击 >50% 且转化 >50% = 头部垄断严重；点击不高但转化 >50% = 转化垄断强；点击 >50% 但转化不高 = 曝光集中但转化外流；点击 <20% 且转化 <20% = 头部垄断低但可能流量分散。点击和转化是不同维度，不直接相加。';
+  const top3QuantRows = avgClick == null || avgConvert == null ? `
+        <tr><td>TOP3 点击/转化</td><td>未采集</td><td>缺少 ABA 趋势数据</td><td>未判断</td><td>无法判定头部垄断度。</td></tr>
+      ` : `
+        <tr><td>TOP3 点击份额</td><td>${avgClick.toFixed(1)}%</td><td>&gt;50% 表示曝光集中；&lt;20% 表示曝光分散</td><td>${avgClick > 50 ? '曝光集中' : avgClick < 20 ? '曝光分散' : '中等曝光'}</td><td>点击份额反映消费者先看到/点击谁。</td></tr>
+        <tr><td>TOP3 转化份额</td><td>${avgConvert.toFixed(1)}%</td><td>&gt;50% 表示成交集中；&lt;20% 表示成交分散</td><td>${avgConvert > 50 ? '成交集中' : avgConvert < 20 ? '成交分散' : '中等成交'}</td><td>转化份额反映消费者最终买谁。</td></tr>
+        <tr><td>四象限判定</td><td>${top3ShareClass.quadrant}</td><td>按点击份额和转化份额分别判断，不做简单求和</td><td>${top3ShareClass.level}</td><td>${top3ShareClass.note}</td></tr>
+        <tr><td>标品/非标品倾向</td><td>${top3ShareClass.standardType}</td><td>核心流量/成交越集中，越偏标品或强头部；越分散，越偏非标或长尾竞争</td><td>${top3ShareClass.standardType}</td><td>该判断只是流量结构线索，还要结合产品功能、价格带、变体和评论壁垒。</td></tr>
+      `;
   const computeGooglePeakMonths = () => {
     const points = seasonalityData.googleTrendsData?.data5Years || seasonalityData.googleTrendsData?.data || [];
     if (!points.length) return [];
@@ -1712,10 +2058,15 @@ if (seasonalityData && seasonalityData.seasonality) {
       <h2>机会指数与在售商品数</h2>
       <div class="chart-container"><canvas id="seasonOppChart"></canvas></div>
       <div style="margin-top:8px;padding:10px 12px;background:#f0f5ff;border-radius:8px;font-size:12px;line-height:1.8;color:#555;">
+        <strong>量化结论：</strong>${oppDecisionText}<br>
         <strong>分析：</strong>${oppAnalysisText}<br>
         <strong>供给侧：</strong>${productAnalysisText}<br>
         <strong>评判标准：</strong>${oppStandardText}
       </div>
+      <table style="margin-top:12px;">
+        <tr><th>指标</th><th>当前值</th><th>知识库标准</th><th>判定</th><th>说明</th></tr>
+        ${oppQuantRows}
+      </table>
     </div>
     <div>
       <h2>TOP3 点击份额与转化份额</h2>
@@ -1724,6 +2075,10 @@ if (seasonalityData && seasonalityData.seasonality) {
         <strong>分析：</strong>${top3AnalysisText}<br>
         <strong>评判标准：</strong>${top3StandardText}
       </div>
+      <table style="margin-top:12px;">
+        <tr><th>指标</th><th>当前值</th><th>知识库标准</th><th>判定</th><th>说明</th></tr>
+        ${top3QuantRows}
+      </table>
     </div>
   </div>
 </div>`;
@@ -1935,22 +2290,7 @@ auditItems.push(auditRow(
   '保留数据口径说明；必要时用 Amazon 最小类目页、Keepa/Helium10 与 Oalur 数据交叉验证。'
 ));
 
-replacements['{{KNOWLEDGE_AUDIT_BLOCK}}'] = `
-<div class="card">
-  <h2>📌 知识库缺口审计与产品缺陷提示</h2>
-  <p style="font-size:13px;color:#666;line-height:1.8;margin-bottom:12px;">
-    该模块基于 <code>./knowledge</code> 中的选品方法论，对当前 Oalur 抓取数据无法证明的关键决策项做缺口审计。
-    结论原则：已有数据只用于市场/竞争初筛；利润、合规、用户痛点和供应链未验证前，不应直接进入开发。
-  </p>
-  <table>
-    <tr><th>风险等级</th><th>知识库检查项</th><th>当前证据</th><th>对决策的影响</th><th>下一步补采/优化</th></tr>
-    ${auditItems.join('\n')}
-  </table>
-  <div class="conclusion caution" style="font-size:16px;text-align:left;line-height:1.8;">
-    当前报告适合作为“市场容量与竞争初筛”，还不能单独作为最终开发决策。
-    必须补齐毛利核算、CPC、专利认证、评论痛点、供应链报价和包装/FBA 成本后，再判断是否进入样品开发。
-  </div>
-</div>`;
+replacements['{{KNOWLEDGE_AUDIT_BLOCK}}'] = '';
 for (const [key, val] of Object.entries(replacements)) {
   html = html.split(key).join(val);
 }
