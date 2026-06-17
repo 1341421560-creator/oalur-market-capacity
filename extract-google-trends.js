@@ -44,7 +44,7 @@ async function extract(browser, kw) {
   const url = `https://trends.google.com/trends/explore?geo=US&q=${encodeURIComponent(kw)}`;
 
   console.log(`🌐 导航至 Google Trends...`);
-  await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
   await new Promise(r => setTimeout(r, 5000));
   try {
     const apiResult = await page.evaluate(async (keyword) => {

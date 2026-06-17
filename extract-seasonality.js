@@ -324,7 +324,7 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
     try {
       execSync(
         `node "${path.join(SKILL_DIR, 'extract-google-trends.js')}" "${keyword}" "${gtrendsFile}"`,
-        { stdio: 'inherit', timeout: 60000 }
+        { stdio: 'inherit', timeout: 90000 }
       );
       if (fs.existsSync(gtrendsFile)) {
         gtData = JSON.parse(fs.readFileSync(gtrendsFile, 'utf-8'));
@@ -335,6 +335,31 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   }
 
   // ─── Step 2: Oalur 搜索量 ───
+  if (!gtData && fs.existsSync(gtrendsFile)) {
+    try {
+      gtData = JSON.parse(fs.readFileSync(gtrendsFile, 'utf-8'));
+    } catch {}
+  }
+
+  // Retry invalid Google Trends cache instead of reusing a previous failed result.
+  if (gtData && (gtData.error || !Array.isArray(gtData.data5Years) || gtData.data5Years.length === 0)) {
+    const previousError = gtData.error || 'missing data5Years';
+    console.log(`Google Trends cache invalid, retrying: ${previousError}`);
+    try {
+      execSync(
+        `node "${path.join(SKILL_DIR, 'extract-google-trends.js')}" "${keyword}" "${gtrendsFile}"`,
+        { stdio: 'inherit', timeout: 90000 }
+      );
+      if (fs.existsSync(gtrendsFile)) {
+        gtData = JSON.parse(fs.readFileSync(gtrendsFile, 'utf-8'));
+      }
+    } catch (e) {
+      console.log(`Google Trends retry failed: ${e.message}`);
+      gtData = { keyword, error: e.message, previousError, extractedAt: new Date().toISOString() };
+      fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
+    }
+  }
+
   let oalurVolData = null;
   if (fs.existsSync(oalurVolFile)) {
     console.log(`\n📁 Step 2/3: 读取已有 Oalur 搜索量缓存`);

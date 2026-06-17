@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "description": "Keyword intent rules for category selection and title-intent rescue. Rules assist filtering but do not replace target-category selection.",
+    "ruleKey": "Use lower-case singular keyword tokens, for example coffee spoon instead of Coffee Spoons.",
+    "sourceTypes": ["manual", "ai-draft", "system-default"]
+  },
+  "rules": {
+    "coffee spoon": {
+      "source": "manual",
+      "shape": ["spoon", "scoop"],
+      "intent": ["coffee", "espresso", "demitasse", "cappuccino", "latte", "moka", "tea"],
+      "equivalent": ["teaspoon", "tea spoon", "iced tea spoon", "dessert spoon", "stirring spoon"],
+      "exclude": ["spoon rest", "spoon holder", "soup spoon", "serving spoon", "ladle", "fork", "knife", "coffee mug"]
+    },
+    "espresso spoon": {
+      "source": "manual",
+      "shape": ["spoon", "scoop"],
+      "intent": ["espresso", "coffee", "demitasse", "cappuccino", "latte", "moka"],
+      "equivalent": ["teaspoon", "tea spoon", "demitasse spoon", "dessert spoon", "stirring spoon"],
+      "exclude": ["spoon rest", "spoon holder", "soup spoon", "serving spoon", "ladle", "fork", "knife", "coffee mug"]
+    },
+    "chocolate mold": {
+      "source": "manual",
+      "shape": ["mold", "mould"],
+      "intent": ["chocolate", "candy", "gummy", "caramel", "fondant", "bonbon", "truffle"],
+      "equivalent": ["candy mold", "gummy mold", "fondant mold", "bonbon mold", "truffle mold"],
+      "exclude": ["soap mold", "resin mold", "candle mold", "wax mold", "plaster mold", "clay mold", "muffin pan", "cupcake pan", "donut pan", "cake pan"]
+    },
+    "candy mold": {
+      "source": "manual",
+      "shape": ["mold", "mould"],
+      "intent": ["candy", "chocolate", "gummy", "caramel", "fondant", "bonbon", "truffle"],
+      "equivalent": ["chocolate mold", "gummy mold", "fondant mold", "bonbon mold", "truffle mold"],
+      "exclude": ["soap mold", "resin mold", "candle mold", "wax mold", "plaster mold", "clay mold", "muffin pan", "cupcake pan", "donut pan", "cake pan"]
+    }
+  }
+}

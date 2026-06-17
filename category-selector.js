@@ -1,5 +1,5 @@
 const SHAPE_ALIASES = {
-  spoon: ['spoon', 'scoop'],
+  spoon: ['spoon', 'scoop', 'teaspoon'],
   scoop: ['scoop', 'spoon'],
   mold: ['mold', 'mould', 'pan'],
   mould: ['mould', 'mold', 'pan'],
@@ -19,9 +19,24 @@ const SHAPE_ALIASES = {
 };
 
 const ACCESSORY_LEAF_TOKENS = new Set(['rest', 'holder', 'stand', 'rack', 'organizer', 'case', 'cover']);
+const PRODUCT_SHAPE_TOKENS = new Set([...Object.keys(SHAPE_ALIASES), 'candle', 'torch', 'lantern']);
 
 const MODIFIER_ALIASES = {
-  coffee: ['coffee', 'espresso', 'demitasse', 'cappuccino', 'latte', 'moka'],
+  coffee: ['coffee', 'espresso', 'demitasse', 'cappuccino', 'latte', 'moka', 'tea', 'teaspoon'],
+  espresso: ['espresso', 'coffee', 'demitasse', 'cappuccino', 'latte', 'moka', 'tea', 'teaspoon'],
+  chocolate: ['chocolate', 'candy', 'gummy', 'caramel', 'fondant', 'bonbon', 'truffle'],
+  candy: ['candy', 'chocolate', 'gummy', 'caramel', 'fondant', 'bonbon', 'truffle']
+};
+
+const CONTEXT_ALIASES = {
+  garden: ['garden', 'gardening', 'lawn', 'watering', 'yard', 'outdoor', 'patio'],
+  hose: ['hose', 'hoses', 'watering'],
+  pressure: ['pressure', 'power'],
+  washer: ['washer', 'wash', 'washing'],
+  car: ['car', 'auto', 'automotive', 'vehicle'],
+  wash: ['wash', 'washing', 'washer', 'cleaning'],
+  kitchen: ['kitchen', 'dining', 'dishwashing', 'dish', 'cleaning', 'household', 'house'],
+  coffee: ['coffee', 'espresso', 'demitasse', 'cappuccino', 'latte', 'moka', 'tea', 'teaspoon'],
   espresso: ['espresso', 'coffee', 'demitasse', 'cappuccino', 'latte', 'moka'],
   chocolate: ['chocolate', 'candy', 'gummy', 'caramel', 'fondant', 'bonbon', 'truffle'],
   candy: ['candy', 'chocolate', 'gummy', 'caramel', 'fondant', 'bonbon', 'truffle']
@@ -30,6 +45,7 @@ const MODIFIER_ALIASES = {
 function stemToken(token) {
   const t = String(token || '').toLowerCase();
   if (t.length > 4 && t.endsWith('ies')) return t.slice(0, -3) + 'y';
+  if (t.length > 4 && t.endsWith('les')) return t.slice(0, -1);
   if (t.length > 3 && t.endsWith('es')) return t.slice(0, -2);
   if (t.length > 3 && t.endsWith('s')) return t.slice(0, -1);
   return t;
@@ -55,12 +71,21 @@ function categoryLeaf(category) {
   return parts[parts.length - 1] || String(category || '');
 }
 
+function isUnknownCategory(category) {
+  const value = String(category || '');
+  return !value || value.includes('未识别') || value.includes('\u93c8\uE046\u7611');
+}
+
 function aliasesFor(token) {
   return new Set([token, ...(SHAPE_ALIASES[token] || [])].map(stemToken));
 }
 
 function modifierAliasesFor(token) {
   return new Set([token, ...(MODIFIER_ALIASES[token] || [])].map(stemToken));
+}
+
+function contextAliasesFor(token) {
+  return new Set([token, ...(CONTEXT_ALIASES[token] || MODIFIER_ALIASES[token] || [])].map(stemToken));
 }
 
 function anyTokenHit(words, tokens) {
@@ -71,15 +96,80 @@ function countHits(words, tokens) {
   return tokens.filter(token => words.has(token)).length;
 }
 
-function scoreCategoryForKeyword(category, items, keyword) {
+function keywordIntentParts(keyword) {
   const tokens = keywordTokens(keyword);
+  if (!tokens.length) return { tokens, shapeToken: '', modifierTokens: [] };
+  let shapeIndex = -1;
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (PRODUCT_SHAPE_TOKENS.has(tokens[i])) {
+      shapeIndex = i;
+      break;
+    }
+  }
+  if (shapeIndex < 0) shapeIndex = tokens.length - 1;
+  return {
+    tokens,
+    shapeToken: tokens[shapeIndex],
+    modifierTokens: tokens.filter((_, index) => index !== shapeIndex)
+  };
+}
+
+function categoryContextInfo(category, keyword) {
+  const words = tokenSet(category);
+  const tokens = keywordTokens(keyword);
+  const contextTokens = tokens.slice(0, -1);
+  if (!contextTokens.length) {
+    return {
+      contextMatch: true,
+      contextHits: 0,
+      contextTokenCount: 0,
+      contextScore: 1,
+      contextTokens: [],
+      contextMatchedTokens: []
+    };
+  }
+  const matchedTokens = [];
+  const matchedGroups = [];
+  let hits = 0;
+  for (const token of contextTokens) {
+    const aliases = contextAliasesFor(token);
+    const matched = [...aliases].filter(alias => words.has(alias));
+    if (matched.length) {
+      hits++;
+      matchedGroups.push(token);
+      matchedTokens.push(...matched);
+    }
+  }
+  const competingContextTokens = Object.keys(CONTEXT_ALIASES).filter(token => {
+    if (contextTokens.includes(token)) return false;
+    return [...contextAliasesFor(token)].some(alias => words.has(alias));
+  });
+  const contextScore = hits / contextTokens.length;
+  const allContextTokensMatched = hits === contextTokens.length;
+  const primaryContextMatched = contextTokens.length > 1 && matchedGroups.includes(contextTokens[0]);
+  const contextMatch = allContextTokensMatched || (primaryContextMatched && competingContextTokens.length === 0);
+  return {
+    contextMatch,
+    contextHits: hits,
+    contextTokenCount: contextTokens.length,
+    contextScore: Math.round(contextScore * 1000) / 1000,
+    contextTokens,
+    contextMatchedTokens: [...new Set(matchedTokens)],
+    competingContextTokens
+  };
+}
+
+function categoryMatchesKeywordContext(category, keyword) {
+  return categoryContextInfo(category, keyword).contextMatch;
+}
+
+function scoreCategoryForKeyword(category, items, keyword) {
+  const { tokens, shapeToken, modifierTokens } = keywordIntentParts(keyword);
   if (!tokens.length) {
     return { score: 0, reason: 'empty keyword', tokenHits: [], titleAllRate: 0, titleAnyRate: 0 };
   }
 
-  const shapeToken = tokens[tokens.length - 1];
   const shapeAliases = aliasesFor(shapeToken);
-  const modifierTokens = tokens.slice(0, -1);
   const categoryWords = tokenSet(category);
   const leafWords = tokenSet(categoryLeaf(category));
   const accessoryLeaf = [...ACCESSORY_LEAF_TOKENS].some(token => leafWords.has(token));
@@ -138,11 +228,9 @@ function scoreCategoryForKeyword(category, items, keyword) {
 }
 
 function titleMatchesKeywordIntent(title, keyword) {
-  const tokens = keywordTokens(keyword);
+  const { tokens, shapeToken, modifierTokens } = keywordIntentParts(keyword);
   if (!tokens.length) return false;
-  const shapeToken = tokens[tokens.length - 1];
   const shapeAliases = aliasesFor(shapeToken);
-  const modifierTokens = tokens.slice(0, -1);
   const titleWords = tokenSet(title);
   const shapeHit = anyTokenHit(titleWords, shapeAliases);
   const modifierHit = modifierTokens.every(token => anyTokenHit(titleWords, modifierAliasesFor(token)));
@@ -172,6 +260,7 @@ function selectTargetCategories(products, keywords) {
   const details = [...grouped.entries()].map(([category, items]) => {
     const perKeyword = keywordList.map(keyword => ({
       keyword,
+      ...categoryContextInfo(category, keyword),
       ...scoreCategoryForKeyword(category, items, keyword)
     }));
     const best = perKeyword.reduce((a, b) => (b.score > a.score ? b : a), perKeyword[0]);
@@ -184,6 +273,13 @@ function selectTargetCategories(products, keywords) {
       tokenHits: best.tokenHits,
       shapeHit: best.shapeHit,
       modifierHits: best.modifierHits,
+      contextMatch: best.contextMatch,
+      contextHits: best.contextHits,
+      contextTokenCount: best.contextTokenCount,
+      contextScore: best.contextScore,
+      contextTokens: best.contextTokens,
+      contextMatchedTokens: best.contextMatchedTokens,
+      competingContextTokens: best.competingContextTokens,
       functionalEquivalent: best.functionalEquivalent,
       titleAllRate: best.titleAllRate,
       titleAnyRate: best.titleAnyRate,
@@ -192,13 +288,70 @@ function selectTargetCategories(products, keywords) {
   }).sort((a, b) => b.score - a.score || b.count - a.count);
 
   const selected = details.filter(d => (
-    d.category !== '未识别' &&
-    d.score >= 110 &&
-    (d.count >= 3 || d.score >= 180)
+    !isUnknownCategory(d.category) &&
+    !d.functionalEquivalent &&
+    (
+      (d.score >= 110 && (d.count >= 3 || d.score >= 180)) ||
+      (d.shapeHit && d.contextMatch !== false && d.count >= 20 && d.titleAllRate >= 0.5)
+    )
   ));
+  const functionalEquivalentRescueSelected = details.filter(d => (
+    d.category &&
+    !isUnknownCategory(d.category) &&
+    d.functionalEquivalent
+  ));
+  const broadTitleIntentSelected = details.filter(d => (
+    d.category &&
+    !isUnknownCategory(d.category) &&
+    !d.shapeHit &&
+    d.score >= 70 &&
+    d.count >= 20 &&
+    d.titleAllRate >= 0.35
+  ));
+  const offContextShapeRescueSelected = details.filter(d => (
+    d.category &&
+    !isUnknownCategory(d.category) &&
+    d.shapeHit &&
+    d.contextMatch === false &&
+    d.score >= 110 &&
+    d.count >= 3 &&
+    d.titleAllRate >= 0.2
+  ));
+  const highTitleIntentRescueSelected = details.filter(d => (
+    d.category &&
+    !isUnknownCategory(d.category) &&
+    !selected.some(item => item.category === d.category) &&
+    d.count >= 5 &&
+    d.titleAllRate >= 0.35 &&
+    d.titleAnyRate >= 0.85 &&
+    d.score >= 20
+  ));
+  const titleIntentRescueSet = new Set([
+    ...functionalEquivalentRescueSelected.map(d => d.category),
+    ...broadTitleIntentSelected.map(d => d.category),
+    ...offContextShapeRescueSelected.map(d => d.category),
+    ...highTitleIntentRescueSelected.map(d => d.category)
+  ]);
 
-  const fallback = selected.length ? selected : details.filter(d => d.category !== '未识别').slice(0, 1);
-  const selectedCategories = fallback.map(d => d.category);
+  const fallback = selected.length
+    ? selected
+    : (broadTitleIntentSelected.length
+      ? broadTitleIntentSelected.slice(0, 5)
+      : details.filter(d => !isUnknownCategory(d.category)).slice(0, 1));
+  const expandedFallback = selected.length ? fallback : (() => {
+    const validDetails = details.filter(d => !isUnknownCategory(d.category));
+    const top = validDetails[0];
+    if (!top) return fallback;
+    const closeMatches = validDetails.filter(d => (
+      d.score >= Math.max(70, top.score - 8) &&
+      d.count >= 3 &&
+      d.titleAllRate >= 0.35
+    )).slice(0, 5);
+    return closeMatches.length ? closeMatches : fallback;
+  })();
+  const selectedCategories = expandedFallback
+    .filter(d => !d.functionalEquivalent)
+    .map(d => d.category);
   const selectedSet = new Set(selectedCategories);
 
   return {
@@ -212,7 +365,17 @@ function selectTargetCategories(products, keywords) {
       selectedKeyword: d.selectedKeyword,
       reason: d.reason,
       tokenHits: d.tokenHits,
+      shapeHit: d.shapeHit,
+      modifierHits: d.modifierHits,
+      contextMatch: d.contextMatch,
+      contextHits: d.contextHits,
+      contextTokenCount: d.contextTokenCount,
+      contextScore: d.contextScore,
+      contextTokens: d.contextTokens,
+      contextMatchedTokens: d.contextMatchedTokens,
+      competingContextTokens: d.competingContextTokens,
       functionalEquivalent: d.functionalEquivalent,
+      titleIntentRescueCandidate: titleIntentRescueSet.has(d.category),
       titleAllRate: d.titleAllRate,
       titleAnyRate: d.titleAnyRate
     }))
@@ -224,6 +387,7 @@ module.exports = {
   stemToken,
   tokenize,
   keywordTokens,
+  categoryContextInfo,
   titleMatchesKeywordIntent,
   listingMatchesKeywordIntent
 };

@@ -62,6 +62,7 @@ const asinArg = process.argv[2];
 const requestedOutFile = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : null;
 const useExcelFallback = process.argv.includes('--excel');
 const reportOnly = process.argv.includes('--report-only');
+const ASIN_TREND_CONCURRENCY = Math.max(1, Math.min(5, Number(process.env.OALUR_ASIN_TREND_CONCURRENCY || 5)));
 
 if (!asinArg) {
   console.error('Usage: node extract-asin-trends.js "ASIN1,ASIN2,..." [output.json] [--excel]');
@@ -181,13 +182,20 @@ function lifecycleFromSeries(asin, product, directTrendData) {
 
   const priceDown = avgPriceSecond < avgPriceFirst * 0.93;
   const bsrUp = avgBsrFirst > 0 && avgBsrSecond > avgBsrFirst * 1.15;
+  const ratingsSlow = growthFirst > 0 && growthLast < growthFirst * 0.5;
+  const lifecycleRisks = [
+    priceDown ? '价格下行≥7%' : null,
+    bsrUp ? '大类BSR恶化≥15%' : null,
+    ratingsSlow ? 'Ratings增速放缓≥50%' : null
+  ].filter(Boolean);
+  const lifecycleScore = lifecycleRisks.length === 0 ? 5 : lifecycleRisks.length === 1 ? 3 : lifecycleRisks.length === 2 ? 1 : 0;
 
   let lifecycle = '健康成熟';
   let cls = 'pass';
   if (priceDown && bsrUp) { lifecycle = '衰退期'; cls = 'fail'; }
   else if (priceDown) { lifecycle = '成熟后期'; cls = 'caution'; }
   else if (bsrUp) { lifecycle = '排名下滑'; cls = 'caution'; }
-  else if (growthLast < growthFirst * 0.5 && growthFirst > 0) { lifecycle = '成熟期'; cls = 'pass'; }
+  else if (ratingsSlow) { lifecycle = '成熟期'; cls = 'pass'; }
   return {
     asin,
     title: product.title || '',
@@ -204,7 +212,8 @@ function lifecycleFromSeries(asin, product, directTrendData) {
     cls,
     avgPriceFirst, avgPriceSecond,
     avgBsrFirst, avgBsrSecond,
-    growthFirst, growthLast
+    growthFirst, growthLast,
+    lifecycleScore, lifecycleRisks
   };
 }
 
@@ -307,6 +316,19 @@ async function extractDirect(browser, asin, index, total) {
   }
 }
 
+async function runPool(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  async function runWorker() {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker()));
+  return results;
+}
+
 function trendRows(item) {
   const byDate = new Map();
   for (const p of item.priceData) byDate.set(p.date, { date: p.date, price: p.buyboxPrice });
@@ -330,8 +352,14 @@ function generateDirectLifecycleReport(lifecycleItems, lifecycleJsonPath) {
     <td>$${d.firstP.buyboxPrice.toFixed(2)} → $${d.lastP.buyboxPrice.toFixed(2)}</td>
     <td>${d.firstB ? '#' + d.firstB.mainBsr.toLocaleString() : '-'} → ${d.lastB ? '#' + d.lastB.mainBsr.toLocaleString() : '-'}</td>
     <td>${d.firstR ? d.firstR.ratingsNum.toLocaleString() : '-'} → ${d.lastR ? d.lastR.ratingsNum.toLocaleString() : '-'}</td>
+    <td>${d.lifecycleScore}/5</td>
+    <td>${d.lifecycleRisks.length ? d.lifecycleRisks.join('；') : '未命中明显风险'}</td>
     <td class="${d.cls}">${d.lifecycle}</td>
   </tr>`).join('\n');
+  const avgLifecycleScore = lifecycleItems.length
+    ? lifecycleItems.reduce((s, d) => s + d.lifecycleScore, 0) / lifecycleItems.length
+    : 0;
+  const severeLifecycleCount = lifecycleItems.filter(d => d.lifecycleScore <= 1).length;
 
   const cards = lifecycleItems.map((d, idx) => `<section class="card">
     <h2>${d.asin} <span class="${d.cls}">${d.lifecycle}</span></h2>
@@ -372,11 +400,15 @@ function generateDirectLifecycleReport(lifecycleItems, lifecycleJsonPath) {
   </style></head><body>
   <h1>ASIN 价格 & 排名生命周期趋势分析</h1>
   <p>数据来源：Oalur 当前页面 XHR 直读（keepaTrends / bsrTrends / dataTrends），未导出 Excel。生命周期摘要：${relPath(lifecycleJsonPath)}</p>
-  <section class="card"><h2>汇总</h2><table><tr><th>ASIN</th><th>价格变化</th><th>大类 BSR 变化</th><th>Ratings 变化</th><th>生命周期</th></tr>${summaryRows}</table></section>
+  <section class="card"><h2>汇总</h2>
+    <p>整体生命周期得分：<strong>${avgLifecycleScore.toFixed(1)}/5</strong>；严重风险 ASIN：<strong>${severeLifecycleCount}</strong> 个。</p>
+    <table><tr><th>ASIN</th><th>价格变化</th><th>大类 BSR 变化</th><th>Ratings 变化</th><th>得分</th><th>命中风险</th><th>生命周期</th></tr>${summaryRows}</table>
+  </section>
   <section class="card"><h2>知识库生命周期判定标准</h2>
+    <p>每个 ASIN 满分 5 分：未命中风险=5分；命中1项=3分；命中2项=1分；命中3项=0分。</p>
     <p>1. 价格后半段低于前半段 7% 以上：价格下行，可能进入成熟后期或衰退期。</p>
     <p>2. 大类 BSR 后半段高于前半段 15% 以上：大类排名下滑，竞争力下降；大类 BSR 缺失时不参与该项统计。</p>
-    <p>3. Ratings 月增速显著放缓：成熟期后段信号。</p>
+    <p>3. Ratings 月增速后半段比前半段放缓 50% 以上：成熟期后段信号。</p>
   </section>
   ${cards}
   <script>
@@ -426,7 +458,11 @@ function saveLifecycle(products) {
     avgPriceFirst: d.avgPriceFirst,
     avgPriceSecond: d.avgPriceSecond,
     avgBsrFirst: Math.round(d.avgBsrFirst),
-    avgBsrSecond: Math.round(d.avgBsrSecond)
+    avgBsrSecond: Math.round(d.avgBsrSecond),
+    growthFirst: d.growthFirst,
+    growthLast: d.growthLast,
+    lifecycleScore: d.lifecycleScore,
+    lifecycleRisks: d.lifecycleRisks
   }));
   fs.writeFileSync(lifecycleJsonPath, JSON.stringify({ asins, analyzedAt: new Date().toISOString(), mode: 'xhr', products: lifecycleSummary }, null, 2), 'utf-8');
   generateDirectLifecycleReport(lifecycleItems, lifecycleJsonPath);
@@ -468,10 +504,11 @@ function runExcelFallback() {
   }
 
   const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
-  let results = await Promise.all(asins.map((asin, i) => new Promise(async resolve => {
-    await sleep(i * 1000);
-    resolve(await extractDirect(browser, asin, i, asins.length));
-  })));
+  console.log(`Direct XHR concurrency: ${ASIN_TREND_CONCURRENCY} tabs`);
+  let results = await runPool(asins, ASIN_TREND_CONCURRENCY, async (asin, i) => {
+    await sleep((i % ASIN_TREND_CONCURRENCY) * 500);
+    return extractDirect(browser, asin, i, asins.length);
+  });
 
   const failed = results.filter(product =>
     !product.trendData ||

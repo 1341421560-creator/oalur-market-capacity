@@ -1,15 +1,20 @@
-const puppeteer = require('puppeteer-core');
+﻿const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { selectSurvivalBaselinePeriod } = require('./survival-baseline');
 const { selectTargetCategories, listingMatchesKeywordIntent, titleMatchesKeywordIntent } = require('./category-selector');
+const { writeKeywordIntentAnalysis } = require('./keyword-intent-ai');
 const {
   aggregateParentListings,
   applyTargetCategoryMatch,
-  listingMatchesTargetCategories
+  listingMatchesTargetCategories,
+  parseNumber
 } = require('./parent-listing-aggregate');
+const { buildRescuePriceGuard, rescuePriceMatches } = require('./rescue-price-guard');
 
 const OALUR_FILTER_URL = 'https://vip.oalur.com/insight/filter/index?site=US';
+const OALUR_PRODUCT_INFO_URL = 'https://vip.oalur.com/products/information';
 const OALUR_NAV_TIMEOUT_MS = 30000;
 
 async function gotoOalurFilter(page, contextLabel = 'Oalur page') {
@@ -72,6 +77,15 @@ function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
 }
 
+function formatInteger(value) {
+  return Math.round(value || 0).toLocaleString('en-US');
+}
+
+function parsePlainNumber(value) {
+  const n = Number(String(value || '').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
 function outputDirs(taskName) {
   const date = new Date().toISOString().split('T')[0];
   const root = path.join(process.cwd(), 'output', `${date}-${safeSegment(taskName)}`);
@@ -84,43 +98,43 @@ function outputDirs(taskName) {
   };
 }
 
-// 鏈€澶х炕椤垫暟闄愬埗锛堥槻姝㈡棤闄愬惊鐜級
+// Parse product age strings from the search table.
 const MAX_PAGES = 20;
 
-// 鍝佺被搴曠嚎琛紙浠?SKILL.md 鍚屾缁存姢锛?
+// 閸濅胶琚惔鏇犲殠鐞涱煉绱欐禒?SKILL.md 閸氬本顒炵紒瀛樺Б閿?
 const CATEGORY_BSR_TABLE = [
-  { keywords: ['makeup', 'brush', 'eyelash', 'cosmetic', 'beauty'], bsr: 10000, name: '缇庡宸ュ叿' },
-  { keywords: ['cook', 'cookie', 'baking', 'kitchen', 'spatula', 'biscuit', 'cutter', 'gadget', 'utensil'], bsr: 10000, name: '鍘ㄦ埧瀹跺眳' },
-  { keywords: ['pet', 'dog', 'cat', 'leash', 'toy', 'bed', 'scratch'], bsr: 25000, name: '瀹犵墿鐢ㄥ搧' },
-  { keywords: ['shoe', 'shirt', 'pant', 'yoga', 'running', 'clothing', 'sweater'], bsr: 30000, name: '闉嬫湇' },
-  { keywords: ['screwdriver', 'drill', 'tape', 'tool', 'home', 'hardware'], bsr: 15000, name: '宸ュ叿瀹惰' },
-  { keywords: ['hair', 'clipper', 'toothbrush', 'shaver', 'trimmer'], bsr: 10000, name: '涓汉鎶ょ悊' },
-  { keywords: ['phone', 'case', 'earbud', 'charger', 'cable', 'electronic'], bsr: 0, name: '娑堣垂鐢靛瓙' }, // 0 = 闇€鍏蜂綋鍒嗘瀽
-  { keywords: ['pen', 'desk', 'organizer', 'office', 'stationery'], bsr: 15000, name: '鍔炲叕鐢ㄥ搧' },
-  { keywords: ['resistance', 'yoga', 'mat', 'sport', 'exercise', 'gym'], bsr: 20000, name: '杩愬姩鎴峰' },
-  { keywords: ['baby', 'bottle', 'pacifier', 'nursery', 'infant'], bsr: 15000, name: '姣嶅┐鐢ㄥ搧' },
-  { keywords: ['block', 'puzzle', 'toy', 'game', 'LEGO'], bsr: 20000, name: '鐜╁叿' },
-  { keywords: ['car', 'phone', 'mount', 'cover', 'automotive'], bsr: 15000, name: '姹借溅閰嶄欢' },
-  { keywords: ['garden', 'plant', 'pot', 'outdoor', 'lawn'], bsr: 15000, name: '鍥壓' },
+  { keywords: ['makeup', 'brush', 'eyelash', 'cosmetic', 'beauty'], bsr: 10000, name: 'beauty' },
+  { keywords: ['cook', 'cookie', 'baking', 'kitchen', 'spatula', 'biscuit', 'cutter', 'gadget', 'utensil'], bsr: 10000, name: 'kitchen' },
+  { keywords: ['pet', 'dog', 'cat', 'leash', 'toy', 'bed', 'scratch'], bsr: 25000, name: 'pet' },
+  { keywords: ['shoe', 'shirt', 'pant', 'yoga', 'running', 'clothing', 'sweater'], bsr: 30000, name: 'apparel' },
+  { keywords: ['screwdriver', 'drill', 'tape', 'tool', 'home', 'hardware'], bsr: 15000, name: 'tools' },
+  { keywords: ['hair', 'clipper', 'toothbrush', 'shaver', 'trimmer'], bsr: 10000, name: 'personal-care' },
+  { keywords: ['phone', 'case', 'earbud', 'charger', 'cable', 'electronic'], bsr: 0, name: 'electronics' }, // 0 = manual review
+  { keywords: ['pen', 'desk', 'organizer', 'office', 'stationery'], bsr: 15000, name: 'office' },
+  { keywords: ['resistance', 'yoga', 'mat', 'sport', 'exercise', 'gym'], bsr: 20000, name: 'sports' },
+  { keywords: ['baby', 'bottle', 'pacifier', 'nursery', 'infant'], bsr: 15000, name: 'baby' },
+  { keywords: ['block', 'puzzle', 'toy', 'game', 'LEGO'], bsr: 20000, name: 'toys' },
+  { keywords: ['car', 'phone', 'mount', 'cover', 'automotive'], bsr: 15000, name: 'automotive' },
+  { keywords: ['garden', 'plant', 'pot', 'outdoor', 'lawn'], bsr: 15000, name: 'garden' },
 ];
 
-// 浠庡叧閿瘝鑷姩鍖归厤鍝佺被搴曠嚎 BSR
+// 娴犲骸鍙ч柨顔跨槤閼奉亜濮╅崠褰掑帳閸濅胶琚惔鏇犲殠 BSR
 function autoDetectBsr(keyword) {
   const kw = keyword.toLowerCase();
   for (const cat of CATEGORY_BSR_TABLE) {
     if (cat.keywords.some(k => kw.includes(k))) {
-      if (cat.bsr === 0) return null; // 闇€鍏蜂綋鍒嗘瀽
+      if (cat.bsr === 0) return null; // 闂団偓閸忚渹缍嬮崚鍡樼€?
       return cat.bsr;
     }
   }
-  return 10000; // 榛樿
+  return 10000; // 姒涙顓?
 }
 
-// 鍙傛暟锛氬叧閿瘝1,鍏抽敭璇?,... [BSR涓婇檺] [杈撳嚭鏂囦欢鍚峕 [--time-filter YYYY-MM]
-// BSR涓婇檺涓哄彲閫夊弬鏁帮紝涓嶄紶鏃惰嚜鍔ㄤ粠鍏抽敭璇嶅尮閰嶅搧绫诲簳绾?
-// 绀轰緥: node extract-data.js "Cookie Cutter" 10000 merged-data.json
-// 绀轰緥: node extract-data.js "Cookie Cutter"锛堣嚜鍔ㄥ尮閰?BSR锛?
-// 绀轰緥: node extract-data.js "Cookie Cutter" 10000 data.json --time-filter 2025-12
+// 閸欏倹鏆熼敍姘彠闁款喛鐦?,閸忔娊鏁拠?,... [BSR娑撳﹪妾篯 [鏉堟挸鍤弬鍥︽閸氬硶 [--time-filter YYYY-MM]
+// BSR娑撳﹪妾烘稉鍝勫讲闁寮弫甯礉娑撳秳绱堕弮鎯板殰閸斻劋绮犻崗鎶芥暛鐠囧秴灏柊宥呮惂缁绨崇痪?
+// 缁€杞扮伐: node extract-data.js "Cookie Cutter" 10000 merged-data.json
+// 缁€杞扮伐: node extract-data.js "Cookie Cutter"閿涘牐鍤滈崝銊ュ爱闁?BSR閿?
+// Example: node extract-data.js "Cookie Cutter" 10000 data.json --survival-baseline auto
 const keywordsRaw = process.argv[2];
 const userBsr = process.argv[3];
 const defaultOutFile = keywordsRaw ? keywordsRaw.split(',')[0].trim().replace(/\s+/g, '-') + '-data.json' : '';
@@ -128,10 +142,18 @@ const dirs = outputDirs(keywordsRaw ? keywordsRaw.split(',')[0].trim() : 'output
 const explicitOutFile = process.argv[4] && !process.argv[4].startsWith('--') ? process.argv[4] : null;
 let outFile = explicitOutFile || path.join(dirs.data, defaultOutFile);
 
-// 鏃堕棿绛涢€夊櫒锛堝彲閫夛紝鐢ㄤ簬鍘嗗彶鏁版嵁鍥炴函锛?
+// Extract rows from the product search result table.
 const timeFilterIdx = process.argv.indexOf('--time-filter');
-const timeFilterRaw = timeFilterIdx > -1 ? process.argv[timeFilterIdx + 1] : null;
-let timeFilterLabel = null; // 濡?"2025骞?2鏈?
+const survivalBaselineIdx = process.argv.indexOf('--survival-baseline');
+const survivalBaselineMode = survivalBaselineIdx > -1 ? (process.argv[survivalBaselineIdx + 1] || 'auto') : null;
+const survivalBaseline = survivalBaselineMode === 'auto' ? selectSurvivalBaselinePeriod(new Date()) : null;
+const timeFilterRaw = timeFilterIdx > -1 ? process.argv[timeFilterIdx + 1] : (survivalBaseline ? survivalBaseline.selectedYm : null);
+const historicalNewOnly = Boolean(survivalBaseline) || process.argv.includes('--historical-new-only');
+const allowOverPageLimit = process.argv.includes('--allow-over-400') || process.env.OALUR_ALLOW_OVER_400 === '1';
+const bsrMinIdx = process.argv.indexOf('--bsr-min');
+const minBsr = bsrMinIdx > -1 ? String(process.argv[bsrMinIdx + 1] || '1') : String(process.env.OALUR_BSR_MIN || '1');
+const salesFloorMin = Number(process.env.OALUR_SALES_FLOOR_MIN || 200);
+let timeFilterLabel = null; // Example: 2025年12月
 if (timeFilterRaw) {
   const [y, m] = timeFilterRaw.split('-');
   if (y && m) {
@@ -139,10 +161,14 @@ if (timeFilterRaw) {
     console.log(`Time filter: ${timeFilterLabel}`);
   }
 }
+if (survivalBaseline) {
+  console.log(`Survival baseline: raw=${survivalBaseline.rawTargetYm}, selected=${survivalBaseline.selectedYm}, window=${survivalBaseline.windowYm.join(',')}`);
+  console.log(`Survival baseline reason: ${survivalBaseline.reason}`);
+}
 
 if (!keywordsRaw) {
-  console.error('鐢ㄦ硶: node extract-data.js "鍏抽敭璇?,鍏抽敭璇?,..." [BSR涓婇檺] [杈撳嚭鏂囦欢.json]');
-  console.error('绀轰緥: node extract-data.js "Cookie Cutter" 10000');
+  console.error('閻劍纭? node extract-data.js "閸忔娊鏁拠?,閸忔娊鏁拠?,..." [BSR娑撳﹪妾篯 [鏉堟挸鍤弬鍥︽.json]');
+  console.error('缁€杞扮伐: node extract-data.js "Cookie Cutter" 10000');
   console.error('Example: node extract-data.js "Cookie Cutter"');
   process.exit(1);
 }
@@ -152,13 +178,27 @@ if (keywords.length > 1 && !explicitOutFile) {
   outFile = path.join(outputDirs(keywords.join('-')).data, 'merged-data.json');
 }
 
-// BSR 鍊奸€夋嫨閫昏緫锛氱敤鎴锋寚瀹?> 鑷姩鍖归厤 > 榛樿10000
+let keywordIntentAnalysisPromise = null;
+if (!process.argv.includes('--skip-keyword-intent-analysis')) {
+  keywordIntentAnalysisPromise = writeKeywordIntentAnalysis(keywords, outFile)
+    .then(result => {
+      const sources = result.analysis.keywords.map(item => `${item.keyword}:${item.source}`).join(', ');
+      console.log(`Keyword intent analysis saved: ${result.file} (${sources})`);
+      return result;
+    })
+    .catch(error => {
+      console.warn(`Keyword intent analysis failed and was skipped: ${error.message}`);
+      return null;
+    });
+}
+
+// BSR 閸婂ジ鈧瀚ㄩ柅鏄忕帆閿涙氨鏁ら幋閿嬪瘹鐎?> 閼奉亜濮╅崠褰掑帳 > 姒涙顓?0000
 let maxBsr;
 const firstKw = keywords[0];
 if (userBsr) {
   maxBsr = userBsr;
   console.log(`Keywords: ${keywords.join(' | ')}`);
-  console.log(`BSR max: ${maxBsr} (user specified)`);
+    console.log(`BSR range: ${minBsr}-${maxBsr} (user specified)`);
 } else {
   const detected = autoDetectBsr(firstKw);
   if (detected === null) {
@@ -167,18 +207,18 @@ if (userBsr) {
   } else {
     maxBsr = String(detected);
     console.log(`Keywords: ${keywords.join(' | ')}`);
-    console.log(`BSR max: ${maxBsr} (auto detected)`);
+    console.log(`BSR range: ${minBsr}-${maxBsr} (auto detected)`);
   }
 }
 
-// 鎻愬彇鍑芥暟锛堝惈绫荤洰璺緞鎻愬彇锛?
-// Oalur 琛ㄥご鍒楁槧灏勶細
-// cells[0]=鍕鹃€? cells[1]=浜у搧淇℃伅  cells[2]=棰勪及閿€閲? cells[3]=棰勪及閿€鍞
-// cells[4]=瀛愪綋閿€閲?瀛愪綋閿€鍞  cells[5]=澶х被鎺掑悕  cells[6]=灏忕被鎺掑悕  cells[7]=Buybox浠锋牸
-// cells[8]=涓婃灦鏃堕棿  cells[9]=鎬籖ating鏁? cells[10]=鍝佺墝  cells[11]=BuyBox鍗栧
-// cells[12]=鍙樹綋鏁? cells[13]=鍗栧鏁? cells[14]=FBA&姣涘埄鐜? cells[15]=閲嶉噺/浣撶Н
+// 閹绘劕褰囬崙鑺ユ殶閿涘牆鎯堢猾鑽ゆ窗鐠侯垰绶為幓鎰絿閿?
+// Oalur 鐞涖劌銇旈崚妤佹Ё鐏忓嫸绱?
+// cells[0]=閸曢箖鈧? cells[1]=娴溠冩惂娣団剝浼? cells[2]=妫板嫪鍙婇柨鈧柌? cells[3]=妫板嫪鍙婇柨鈧崬顕€顤?
+// cells[4]=鐎涙劒缍嬮柨鈧柌?鐎涙劒缍嬮柨鈧崬顕€顤? cells[5]=婢堆呰閹烘帒鎮? cells[6]=鐏忓繒琚幒鎺戞倳  cells[7]=Buybox娴犻攱鐗?
+// cells[8]=listing age, cells[9]=rating count, cells[10]=rating score, cells[11]=BuyBox price.
+// cells[12]=閸欐ü缍嬮弫? cells[13]=閸楁牕顔嶉弫? cells[14]=FBA&濮ｆ稑鍩勯悳? cells[15]=闁插秹鍣?娴ｆ挾袧
 function runNodeScript(args, label) {
-  console.log(`\n鈻?${label}`);
+  console.log(`\n閳?${label}`);
   console.log(`node ${args.map(a => /\s/.test(String(a)) ? `"${a}"` : a).join(' ')}`);
   const result = spawnSync(process.execPath, args, {
     cwd: process.cwd(),
@@ -201,6 +241,10 @@ if (keywords.length > 1) {
     const file = path.join(mergedDirs.data, `${safeSegment(kw)}-data.json`);
     const childArgs = [path.join(__dirname, 'extract-data.js'), kw, String(maxBsr), file];
     if (timeFilterRaw) childArgs.push('--time-filter', timeFilterRaw);
+    if (historicalNewOnly) childArgs.push('--historical-new-only');
+    if (minBsr !== '1') childArgs.push('--bsr-min', minBsr);
+    if (allowOverPageLimit) childArgs.push('--allow-over-400');
+    childArgs.push('--skip-keyword-intent-analysis');
     runNodeScript(childArgs, `extract ${kw}`);
     return file;
   });
@@ -210,6 +254,25 @@ if (keywords.length > 1) {
 }
 
 const extractPageData = (page) => page.evaluate(() => {
+  function cellLines(cell) {
+    return (cell?.innerText || '').split('\n').map(line => line.trim()).filter(Boolean);
+  }
+
+  function primaryCellValue(cell) {
+    return cellLines(cell)[0] || '';
+  }
+
+  function childSalesValue(cell) {
+    const lines = cellLines(cell).slice(1);
+    return lines.find(line => /\d/.test(line) && !/%/.test(line) && !/\$/.test(line)) || '';
+  }
+
+  function childRevenueValue(cell) {
+    const lines = cellLines(cell).slice(1);
+    return lines.find(line => /\$/.test(line) && /\d/.test(line) && !/%/.test(line))
+      || lines.find(line => /\d/.test(line) && !/%/.test(line)) || '';
+  }
+
   const rows = document.querySelectorAll('.el-table__body-wrapper table tbody tr');
   const data = [];
   rows.forEach(row => {
@@ -227,8 +290,12 @@ const extractPageData = (page) => page.evaluate(() => {
         asin: asinMatch ? asinMatch[1] : '',
         pasin: pasinMatch ? pasinMatch[1] : '',
         category,
-        sales: (cells[2]?.innerText || '').trim().split('\n')[0],
-        revenue: (cells[3]?.innerText || '').trim().split('\n')[0],
+        sales: primaryCellValue(cells[2]),
+        revenue: primaryCellValue(cells[3]),
+        salesCellText: (cells[2]?.innerText || '').trim(),
+        revenueCellText: (cells[3]?.innerText || '').trim(),
+        childSales: childSalesValue(cells[2]),
+        childRevenue: childRevenueValue(cells[3]),
         bsr: parseInt((cells[5]?.innerText || '').replace('#', '').trim()) || 0,
         subRank: (cells[6]?.innerText || '').replace('#', '').trim(),
         price: (cells[7]?.innerText || '').trim(),
@@ -244,26 +311,578 @@ const extractPageData = (page) => page.evaluate(() => {
       });
     }
   });
-  const totalText = document.body.innerText.match(/(?:共|total)\s*(\d+)\s*(?:条|items|results)?/i);
+  const totalText = document.body.innerText.match(/(?:鍏眧total)\s*(\d+)\s*(?:鏉items|results)?/i);
   const total = totalText ? parseInt(totalText[1]) : 0;
   const pagerBtns = document.querySelectorAll('.el-pager .number');
   const lastPage = pagerBtns.length > 0 ? parseInt(pagerBtns[pagerBtns.length - 1].innerText) : 1;
   return { data, total, lastPage };
 });
 
-// 鎵ц鍗曚釜鍏抽敭璇嶇殑鎼滅储+鎻愬彇
+function historicalSnapshotDate() {
+  if (!timeFilterRaw) return null;
+  const [year, month] = timeFilterRaw.split('-').map(Number);
+  if (!year || !month) return null;
+  return new Date(year, month - 1, 15);
+}
+
+function isWithinSixMonthsAtHistoricalSnapshot(item) {
+  const snapshot = historicalSnapshotDate();
+  if (!snapshot || !item?.listingDate) return true;
+  const listed = new Date(item.listingDate);
+  if (Number.isNaN(listed.getTime())) return true;
+  const sixMonthsBefore = new Date(snapshot);
+  sixMonthsBefore.setMonth(sixMonthsBefore.getMonth() - 6);
+  return listed >= sixMonthsBefore && listed <= snapshot;
+}
+
+function filterHistoricalNewCandidates(items) {
+  if (!historicalNewOnly) return items;
+  return items.filter(isWithinSixMonthsAtHistoricalSnapshot);
+}
+
+function isUnknownCategoryValue(category) {
+  const value = String(category || '').trim();
+  if (!value) return true;
+  if (!value.includes('>')) return true;
+  return /未识别|unknown|鏈|鏈|未识/i.test(value);
+}
+
+function extractCategoryFromProductPayload(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const seen = new Set();
+  const findPathString = (value, depth = 0) => {
+    if (depth > 4 || value == null) return '';
+    if (typeof value === 'string') return value.includes('>') ? value.trim() : '';
+    if (typeof value !== 'object') return '';
+    if (seen.has(value)) return '';
+    seen.add(value);
+    if (Array.isArray(value)) {
+      const joined = value.map(item => typeof item === 'string' ? item : (item?.name || item?.categoryName || '')).filter(Boolean).join(' > ');
+      if (joined.includes('>')) return joined.trim();
+      for (const item of value) {
+        const found = findPathString(item, depth + 1);
+        if (found) return found;
+      }
+      return '';
+    }
+    for (const key of Object.keys(value)) {
+      if (!/cat|path|node|rank|bsr/i.test(key)) continue;
+      const found = findPathString(value[key], depth + 1);
+      if (found) return found;
+    }
+    return '';
+  };
+  const candidates = [
+    payload.category,
+    payload.categoryPath,
+    payload.category_path,
+    payload.fullCategory,
+    payload.full_category,
+    payload.nodePath,
+    payload.node_path,
+    payload.browseNodePath,
+    payload.browse_node_path
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.includes('>')) return value.trim();
+    if (Array.isArray(value)) {
+      const joined = value.map(item => typeof item === 'string' ? item : (item?.name || item?.categoryName || '')).filter(Boolean).join(' > ');
+      if (joined.includes('>')) return joined.trim();
+    }
+  }
+  return findPathString(payload);
+}
+
+function normalizeListingDate(value) {
+  if (value == null) return '';
+  if (typeof value === 'number') {
+    const date = value > 100000000000 ? new Date(value) : new Date(value * 1000);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+  }
+  const text = String(value).trim();
+  const match = text.match(/(20\d{2}|19\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+  if (match) {
+    return `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`;
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+}
+
+function extractListingDateFromProductPayload(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const seen = new Set();
+  const keyPattern = /listing|listed|available|launch|release|shelf|create|date|time|上架/i;
+  const walk = (value, key = '', depth = 0) => {
+    if (depth > 5 || value == null) return '';
+    if ((typeof value === 'string' || typeof value === 'number') && keyPattern.test(key)) {
+      return normalizeListingDate(value);
+    }
+    if (typeof value !== 'object') return '';
+    if (seen.has(value)) return '';
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = walk(item, key, depth + 1);
+        if (found) return found;
+      }
+      return '';
+    }
+    const keys = Object.keys(value);
+    const orderedKeys = [
+      ...keys.filter(k => keyPattern.test(k)),
+      ...keys.filter(k => !keyPattern.test(k))
+    ];
+    for (const nextKey of orderedKeys) {
+      const found = walk(value[nextKey], nextKey, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  };
+  return walk(payload);
+}
+
+function extractListingDateFromText(text) {
+  const normalized = String(text || '').replace(/\u00a0/g, ' ');
+  const match = normalized.match(/(?:上架时间|上架日期|上市时间|Listing\s*Date|Date\s*First\s*Available|First\s*Available|Available\s*Date)[^\d]*(20\d{2}|19\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})/i);
+  return match ? normalizeListingDate(match[0]) : '';
+}
+
+function extractCategoryFromBsrTrendPayload(payload) {
+  const top = Array.isArray(payload?.top) ? payload.top : [];
+  for (const item of top) {
+    const candidates = [
+      item?.categoryPath,
+      item?.category_path,
+      item?.path,
+      item?.fullPath,
+      item?.namePath,
+      item?.categoryNamePath,
+      item?.categoryName,
+      item?.name
+    ];
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.includes('>')) return value.trim();
+    }
+  }
+  return '';
+}
+
+function uniqueCategoryPaths(values) {
+  return [...new Set((values || [])
+    .map(value => String(value || '').trim())
+    .filter(value => value.includes('>') && /^[A-Z]/.test(value) && value.length < 240))];
+}
+
+function extractMainBsrTrendSummary(payload) {
+  const history = payload?.bsrAllHistory || {};
+  const dates = Array.isArray(history.dates) ? history.dates : [];
+  const top = Array.isArray(payload?.top) ? payload.top : [];
+  const category = top[0] || null;
+  const categoryId = category?.categoryId || category?.id || category?.nodeId || null;
+  const values = categoryId && Array.isArray(history[categoryId]) ? history[categoryId] : [];
+  const points = [];
+  for (let i = 0; i < Math.min(dates.length, values.length); i++) {
+    const value = parsePlainNumber(values[i]);
+    if (value > 0) points.push({ date: dates[i], bsr: value });
+  }
+  const latest = points[points.length - 1] || null;
+  return {
+    categoryId: categoryId || '',
+    categoryName: category?.categoryName || category?.name || '',
+    pointCount: points.length,
+    latestDate: latest?.date || '',
+    latestBsr: latest?.bsr || 0,
+    recentPoints: points.slice(-30)
+  };
+}
+
+async function extractAsinCategoryFromProductInformation(browser, asin) {
+  const page = await browser.newPage();
+  const state = { basicInfo: null, bsrTrend: null };
+  const onResponse = async response => {
+    const url = response.url();
+    if (!url.includes(asin) && !/basicInfo|bsrTrends|rank|category/i.test(url)) return;
+    if (!/basicInfo|bsrTrends|rank|category|information/i.test(url)) return;
+    try {
+      const json = JSON.parse(await response.text());
+      if (url.includes('basicInfo')) state.basicInfo = json.data || json;
+      else if (url.includes('bsrTrends')) state.bsrTrend = json.data || json;
+      else if (/products\/information|products\/base|productInfo|product\/info/i.test(url) && !state.basicInfo) {
+        state.basicInfo = json.data || json;
+      }
+    } catch {}
+  };
+  page.on('response', onResponse);
+  try {
+    await gotoProductInformation(page, asin);
+    await page.waitForFunction(() => document.body && document.body.innerText.trim().length > 0, { timeout: 30000 });
+    for (let i = 0; i < 10; i++) {
+      if (state.basicInfo || state.bsrTrend) break;
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    await page.waitForFunction(() => {
+      const lines = document.body.innerText.split('\n').map(line => line.trim()).filter(Boolean);
+      return lines.some(line =>
+        line.includes('>') &&
+        /^[A-Z]/.test(line) &&
+        !line.includes('http') &&
+        !line.includes('ASIN') &&
+        line.length < 240
+      );
+    }, { timeout: 30000 }).catch(() => {});
+    const pageTextCategories = await page.evaluate(() => {
+      const lines = document.body.innerText.split('\n').map(line => line.trim()).filter(Boolean);
+      return lines.filter(line =>
+        line.includes('>') &&
+        /^[A-Z]/.test(line) &&
+        !line.includes('http') &&
+        !line.includes('ASIN') &&
+        line.length < 240
+      );
+    }).catch(() => []);
+    const pageText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
+    const payloadCategory =
+      extractCategoryFromProductPayload(state.basicInfo) ||
+      extractCategoryFromBsrTrendPayload(state.bsrTrend);
+    const categories = uniqueCategoryPaths([payloadCategory, ...pageTextCategories]);
+    const category = categories[0] || '';
+    const listingDate =
+      extractListingDateFromProductPayload(state.basicInfo) ||
+      extractListingDateFromText(pageText);
+    return {
+      asin,
+      category,
+      categories,
+      listingDate,
+      title: state.basicInfo?.title || state.basicInfo?.name || '',
+      brand: state.basicInfo?.brand || '',
+      bsrTrend: extractMainBsrTrendSummary(state.bsrTrend),
+      source: category || listingDate ? 'products-information' : 'not-found'
+    };
+  } finally {
+    page.off('response', onResponse);
+    await page.close().catch(() => {});
+  }
+}
+
+async function supplementUnknownCategories(browser, items) {
+  const targets = (items || []).filter(item => item.asin && isUnknownCategoryValue(item.category));
+  const uniqueAsins = [...new Set(targets.map(item => item.asin))];
+  if (!uniqueAsins.length) {
+    console.log('Category supplement: no unknown categories');
+    return { checked: 0, supplemented: 0, failed: 0, items: [] };
+  }
+  console.log(`Category supplement: ${uniqueAsins.length} ASIN with unknown category`);
+  const summary = { checked: 0, supplemented: 0, failed: 0, items: [] };
+  const cache = new Map();
+  const concurrency = Math.max(1, Math.min(5, Number(process.env.OALUR_CATEGORY_SUPPLEMENT_CONCURRENCY || 5)));
+  let cursor = 0;
+  async function worker() {
+    while (cursor < uniqueAsins.length) {
+      const asin = uniqueAsins[cursor++];
+      summary.checked += 1;
+      try {
+        const result = await extractAsinCategoryFromProductInformation(browser, asin);
+        cache.set(asin, result);
+        if (result.category && !isUnknownCategoryValue(result.category)) {
+          summary.supplemented += 1;
+          console.log(`  ${asin}: category supplemented -> ${result.category}`);
+        } else {
+          summary.failed += 1;
+          console.warn(`  ${asin}: category not found on product search detail`);
+        }
+        summary.items.push({
+          asin,
+          category: result.category || '',
+          categories: result.categories || [],
+          listingDate: result.listingDate || '',
+          source: result.source,
+          bsrTrend: result.bsrTrend
+        });
+      } catch (error) {
+        summary.failed += 1;
+        cache.set(asin, { asin, category: '', source: 'error', error: error.message });
+        summary.items.push({ asin, category: '', source: 'error', error: error.message });
+        console.warn(`  ${asin}: category supplement failed: ${error.message}`);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, uniqueAsins.length) }, () => worker()));
+  for (const item of targets) {
+    const result = cache.get(item.asin);
+    if (!result?.category || isUnknownCategoryValue(result.category)) continue;
+    item.category = result.category;
+    item.categories = result.categories || [result.category];
+    item.categorySupplementedFrom = result.source;
+    item.categorySupplementCategories = result.categories || [result.category];
+    item.categorySupplementBsrTrend = result.bsrTrend;
+    if (!normalizeListingDate(item.listingDate) && result.listingDate) {
+      item.listingDate = result.listingDate;
+      item.listingDateSupplementedFrom = result.source;
+    }
+    if (!item.title && result.title) item.title = result.title.substring(0, 100);
+    if (!item.brand && result.brand) item.brand = result.brand;
+  }
+  console.log(`Category supplement done: checked ${summary.checked}, supplemented ${summary.supplemented}, failed ${summary.failed}`);
+  return summary;
+}
+
+async function supplementMissingListingDates(browser, items) {
+  const targets = (items || []).filter(item => item.asin && !normalizeListingDate(item.listingDate));
+  const uniqueAsins = [...new Set(targets.map(item => item.asin))];
+  if (!uniqueAsins.length) {
+    console.log('Listing date supplement: no missing listing dates');
+    return { checked: 0, supplemented: 0, failed: 0, items: [] };
+  }
+  console.log(`Listing date supplement: ${uniqueAsins.length} ASIN with missing listing date`);
+  const summary = { checked: 0, supplemented: 0, failed: 0, items: [] };
+  const cache = new Map();
+  const concurrency = Math.max(1, Math.min(5, Number(process.env.OALUR_LISTING_DATE_SUPPLEMENT_CONCURRENCY || 5)));
+  let cursor = 0;
+  async function worker() {
+    while (cursor < uniqueAsins.length) {
+      const asin = uniqueAsins[cursor++];
+      summary.checked += 1;
+      try {
+        const result = await extractAsinCategoryFromProductInformation(browser, asin);
+        cache.set(asin, result);
+        if (result.listingDate) {
+          summary.supplemented += 1;
+          console.log(`  ${asin}: listing date supplemented -> ${result.listingDate}`);
+        } else {
+          summary.failed += 1;
+          console.warn(`  ${asin}: listing date not found on product information page`);
+        }
+        summary.items.push({ asin, listingDate: result.listingDate || '', source: result.source });
+      } catch (error) {
+        summary.failed += 1;
+        cache.set(asin, { asin, listingDate: '', source: 'error', error: error.message });
+        summary.items.push({ asin, listingDate: '', source: 'error', error: error.message });
+        console.warn(`  ${asin}: listing date supplement failed: ${error.message}`);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, uniqueAsins.length) }, () => worker()));
+  for (const item of targets) {
+    const result = cache.get(item.asin);
+    if (!result?.listingDate) continue;
+    item.listingDate = result.listingDate;
+    item.listingDateSupplementedFrom = result.source;
+    if (!item.title && result.title) item.title = result.title.substring(0, 100);
+    if (!item.brand && result.brand) item.brand = result.brand;
+  }
+  console.log(`Listing date supplement done: checked ${summary.checked}, supplemented ${summary.supplemented}, failed ${summary.failed}`);
+  return summary;
+}
+
+function productInformationUrl(asin) {
+  return `${OALUR_PRODUCT_INFO_URL}?asin=${encodeURIComponent(asin)}&site=US`;
+}
+
+async function gotoProductInformation(page, asin) {
+  const url = productInformationUrl(asin);
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
+  } catch (error) {
+    if (String(error?.message || '').toLowerCase().includes('timeout')) {
+      console.error(`ERROR: product information ${asin} navigation timed out after 30s. Stop execution and report to user.`);
+    }
+    throw error;
+  }
+}
+
+async function extractRatingFromProductInformation(page, asin) {
+  await page.waitForFunction(() => document.body && document.body.innerText.trim().length > 0, { timeout: 15000 });
+  await new Promise(r => setTimeout(r, 2000));
+  const result = await page.evaluate((targetAsin) => {
+    const normalize = value => String(value || '').replace(/\u00a0/g, ' ').trim();
+    const parseNum = value => {
+      const n = Number(String(value || '').replace(/[^\d.-]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const text = normalize(document.body.innerText);
+    const patterns = [
+      /评分数\s*\/\s*评论数\s*[:：]?\s*([0-9][0-9,]*)/i,
+      /Ratings?\s*\/\s*Reviews?\s*[:：]?\s*([0-9][0-9,]*)/i,
+      /评分数\s*[:：]?\s*([0-9][0-9,]*)/i,
+      /Ratings?\s*[:：]?\s*([0-9][0-9,]*)/i
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      const value = parseNum(match?.[1]);
+      if (value > 0) return { value, evidence: match[0].slice(0, 120) };
+    }
+    const lines = text.split('\n').map(normalize).filter(Boolean);
+    const ratingLine = lines.find(line => /评分数|Ratings?/i.test(line) && /评论数|Reviews?/i.test(line));
+    if (ratingLine) {
+      const nums = ratingLine.match(/[0-9][0-9,]*/g) || [];
+      const value = parseNum(nums[0]);
+      if (value > 0) return { value, evidence: ratingLine.slice(0, 120) };
+    }
+    const asinLineIndex = lines.findIndex(line => line.includes(targetAsin));
+    const nearby = asinLineIndex >= 0 ? lines.slice(Math.max(0, asinLineIndex - 8), asinLineIndex + 12).join(' | ') : '';
+    return { value: 0, evidence: nearby.slice(0, 240) };
+  }, asin);
+  return result;
+}
+
+async function supplementZeroParentRatings(browser, items) {
+  const targets = (items || []).filter(item => item.asin && parseNumber(item.ratingsNumAggregated || item.ratings) <= 0);
+  if (!targets.length) {
+    console.log('Parent Ratings supplement: no zero-rating parent listings');
+    return { checked: 0, supplemented: 0, failed: 0 };
+  }
+
+  console.log(`Parent Ratings supplement: ${targets.length} parent listings have zero Ratings`);
+  const summary = { checked: 0, supplemented: 0, failed: 0, items: [] };
+  const concurrency = Math.max(1, Math.min(5, Number(process.env.OALUR_RATINGS_SUPPLEMENT_CONCURRENCY || 5)));
+  let cursor = 0;
+  async function worker() {
+    const page = await browser.newPage();
+    try {
+      while (cursor < targets.length) {
+        const item = targets[cursor++];
+        summary.checked += 1;
+        const asin = item.asin;
+        try {
+          await gotoProductInformation(page, asin);
+          const rating = await extractRatingFromProductInformation(page, asin);
+          if (rating.value > 0) {
+            item.ratings = formatInteger(rating.value);
+            item.ratingsNumAggregated = Math.round(rating.value);
+            item.ratingsMetricSource = 'product-information-parent-zero';
+            item.ratingsMetricReason = 'parent-ratings-zero-supplemented';
+            item.ratingsMetricValues = [{ asin, value: Math.round(rating.value), source: 'products/information' }];
+            item.ratingsSupplementedFrom = 'products/information-parent-zero';
+            item.ratingsSupplementEvidence = rating.evidence;
+            summary.supplemented += 1;
+            summary.items.push({ asin, rating: Math.round(rating.value), status: 'supplemented' });
+            console.log(`  ${asin}: supplemented Ratings ${formatInteger(rating.value)}`);
+          } else {
+            item.ratingsLookupFailed = true;
+            item.ratingsLookupEvidence = rating.evidence;
+            summary.failed += 1;
+            summary.items.push({ asin, rating: 0, status: 'not-found' });
+            console.warn(`  ${asin}: Ratings not found on product information page`);
+          }
+        } catch (error) {
+          item.ratingsLookupFailed = true;
+          item.ratingsLookupError = error.message;
+          summary.failed += 1;
+          summary.items.push({ asin, rating: 0, status: 'error', error: error.message });
+          console.warn(`  ${asin}: Ratings supplement failed: ${error.message}`);
+        }
+      }
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, () => worker()));
+  console.log(`Parent Ratings supplement done: checked ${summary.checked}, supplemented ${summary.supplemented}, failed ${summary.failed}`);
+  return summary;
+}
+
+async function sortByListingDateNewestFirst(page) {
+  if (!historicalNewOnly) return;
+  const clicked = await page.evaluate(() => {
+    const headers = [...document.querySelectorAll('.el-table__header-wrapper th')];
+    const target = headers[8] || headers.find(th => /涓婃灦|Listing|Date|鏃堕棿/.test(th.innerText || ''));
+    if (!target) return false;
+    const descending = target.querySelector('.descending, .sort-caret.descending');
+    const ascending = target.querySelector('.ascending, .sort-caret.ascending');
+    (descending || ascending || target).click();
+    return true;
+  });
+  if (clicked) {
+    console.log('Historical new-only mode: sorted by listing date before extraction');
+    await new Promise(r => setTimeout(r, 3000));
+  } else {
+    console.warn('Historical new-only mode: listing date sort header not found; continuing with filtered extraction');
+  }
+}
+
+async function waitForResultRows(page, timeout = 20000) {
+  await page.waitForFunction(() => {
+    const row = document.querySelector('.el-table__body-wrapper table tbody tr:first-child');
+    const loading = [...document.querySelectorAll('.el-loading-mask')].some(el => {
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    });
+    return !loading && row && /ASIN:\s*[A-Z0-9]{10}/.test(row.innerText);
+  }, { timeout });
+}
+
+async function clickConfirmQuery(page) {
+  await page.evaluate(() => {
+    const btns = document.querySelectorAll('button');
+    for (const btn of btns) {
+      const text = btn.innerText.trim();
+      if (text === '确认查询' || text === '纭鏌ヨ') { btn.click(); break; }
+    }
+  });
+}
+
+async function setInputValue(page, elementHandle, value) {
+  await elementHandle.click({ clickCount: 3 });
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type(String(value), { delay: 10 });
+  await elementHandle.evaluate(input => {
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+  });
+}
+
+async function setBsrRange(page, min, max) {
+  const handles = await page.evaluateHandle(() => {
+    const labels = document.querySelectorAll('.el-form-item__label, label, span');
+    for (const label of labels) {
+      const labelText = label.innerText || '';
+      if ((labelText.includes('BSR') && (labelText.includes('大类') || labelText.includes('澶х被'))) ||
+        labelText.includes('大类BSR排名') || labelText.includes('澶х被BSR鎺掑悕')) {
+        const parent = label.closest('.el-form-item') || label.parentElement?.parentElement;
+        const inputs = parent ? [...parent.querySelectorAll('input[type="number"]')] : [];
+        if (inputs.length >= 2) return inputs.slice(0, 2);
+      }
+    }
+    return [];
+  });
+  const properties = await handles.getProperties();
+  const inputs = [...properties.values()].slice(0, 2).map(handle => handle.asElement()).filter(Boolean);
+  if (inputs.length < 2) throw new Error('BSR range inputs not found');
+  await setInputValue(page, inputs[0], min);
+  await setInputValue(page, inputs[1], max);
+  const values = await page.evaluate(() => {
+    const labels = document.querySelectorAll('.el-form-item__label, label, span');
+    for (const label of labels) {
+      const labelText = label.innerText || '';
+      if ((labelText.includes('BSR') && (labelText.includes('大类') || labelText.includes('澶х被'))) ||
+        labelText.includes('大类BSR排名') || labelText.includes('澶х被BSR鎺掑悕')) {
+        const parent = label.closest('.el-form-item') || label.parentElement?.parentElement;
+        const inputs = parent ? [...parent.querySelectorAll('input[type="number"]')] : [];
+        return inputs.slice(0, 2).map(input => input.value);
+      }
+    }
+    return [];
+  });
+  if (String(values[0]) !== String(min) || String(values[1]) !== String(max)) {
+    throw new Error(`BSR range was not applied; expected ${min}-${max}, got ${values.join('-')}`);
+  }
+  console.log(`BSR inputs applied: ${values[0]}-${values[1]}`);
+}
+
 async function extractKeyword(page, keyword) {
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Keyword: ${keyword}`);
   console.log('='.repeat(50));
 
-  // 0. 姣忔閲嶆柊鍔犺浇椤甸潰锛岀‘淇濆共鍑€鐘舵€?
+  // 0. 濮ｅ繑顐奸柌宥嗘煀閸旂姾娴囨い鐢告桨閿涘瞼鈥樻穱婵嗗叡閸戔偓閻樿埖鈧?
   await gotoOalurFilter(page, `keyword ${keyword}`);
   await new Promise(r => setTimeout(r, 3000));
 
-  // 1. 娓呯┖鏃ц緭鍏ュ苟杈撳叆鏂板叧閿瘝
+  // 1. Navigate to Oalur product search and prepare query filters.
   await page.evaluate((kw) => {
-    const input = document.querySelector('input[placeholder*="支持ASIN"], input[placeholder*="ASIN"]');
+    const input = document.querySelector('input[placeholder*="鏀寔ASIN"], input[placeholder*="ASIN"]');
     if (input) {
       const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
       s.call(input, '');
@@ -276,32 +895,11 @@ async function extractKeyword(page, keyword) {
   }, keyword);
   await new Promise(r => setTimeout(r, 500));
 
-  // 2. 璁剧疆 BSR
-  await page.evaluate((max) => {
-    const labels = document.querySelectorAll('.el-form-item__label, label, span');
-    for (const label of labels) {
-      if (label.innerText?.includes('大类BSR排名') || label.innerText?.includes('大类BSR')) {
-        const parent = label.closest('.el-form-item') || label.parentElement?.parentElement;
-        if (!parent) continue;
-        const inputs = parent.querySelectorAll('input[type="number"]');
-        if (inputs.length >= 2) {
-          const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-          s.call(inputs[0], '1');
-          inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-          inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
-          inputs[0].dispatchEvent(new Event('blur', { bubbles: true }));
-          s.call(inputs[1], String(max));
-          inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
-          inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
-          inputs[1].dispatchEvent(new Event('blur', { bubbles: true }));
-        }
-        break;
-      }
-    }
-  }, maxBsr);
+  // 2. Set BSR range.
+  await setBsrRange(page, minBsr, maxBsr);
   await new Promise(r => setTimeout(r, 500));
 
-  // 3. 璁剧疆鏃堕棿绛涢€夛紙鏄惧紡鎸囧畾锛氬綋鍓?杩?0澶╋紝鍘嗗彶=鎸囧畾鏈堜唤锛?
+  // 3. 鐠佸墽鐤嗛弮鍫曟？缁涙盯鈧绱欓弰鎯х础閹稿洤鐣鹃敍姘秼閸?鏉?0婢垛晪绱濋崢鍡楀蕉=閹稿洤鐣鹃張鍫滃敜閿?
   const timeToClick = timeFilterLabel || '近30天';
   console.log(`Time filter: ${timeToClick}`);
   await page.evaluate((label) => {
@@ -316,36 +914,42 @@ async function extractKeyword(page, keyword) {
   }, timeToClick);
   await new Promise(r => setTimeout(r, 3000));
 
-  // 4. 鐐瑰嚮纭鏌ヨ
-  await page.evaluate(() => {
-    const btns = document.querySelectorAll('button');
-    for (const btn of btns) {
-      if (btn.innerText.trim() === '确认查询') { btn.click(); break; }
-    }
-  });
+  // 4. Click confirm/search when the query UI is ready.
+  await clickConfirmQuery(page);
   await new Promise(r => setTimeout(r, 5000));
 
   await ensureVariantSkuEnabled(page);
-  // 绛夊緟琛ㄦ牸鍒锋柊锛堢‘淇?ASIN 鍙彁鍙栵級
+  // 缁涘绶熺悰銊︾壐閸掗攱鏌婇敍鍫⑩€樻穱?ASIN 閸欘垱褰侀崣鏍电礆
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 1000));
     const hasAsin = await page.evaluate(() => {
       const row = document.querySelector('.el-table__body-wrapper table tbody tr:first-child');
       return row && /ASIN:\s*[A-Z0-9]{10}/.test(row.innerText);
     });
-    if (hasAsin) { console.log('鉁?宸叉煡璇紙鏌ョ湅鍏朵粬鍙樹綋锛氬紑鍚紝鍒嗘瀽鎸夌埗浣撹仛鍚堬級'); break; }
+    if (hasAsin) { console.log('Search results loaded.'); break; }
   }
 
-  // 4. 鎻愬彇绗?椤?
-  if (!(await isVariantSkuChecked(page))) throw new Error('第一页抓取前“查看其他变体”不是勾选状态，停止执行');
+  // 4. 閹绘劕褰囩粭?妞?
+  if (!(await isVariantSkuChecked(page))) throw new Error('绗竴椤垫姄鍙栧墠鈥滄煡鐪嬪叾浠栧彉浣撯€濅笉鏄嬀閫夌姸鎬侊紝鍋滄鎵ц');
+  await sortByListingDateNewestFirst(page);
+  await ensureVariantSkuEnabled(page);
   let result = await extractPageData(page);
-  let allData = result.data;
-  console.log(`First page: ${allData.length} rows, total: ${result.total}, pages: ${result.lastPage}`);
+  let allData = filterHistoricalNewCandidates(result.data);
+  console.log(`First page: ${allData.length}/${result.data.length} rows, total: ${result.total}, pages: ${result.lastPage}`);
+  if (!historicalNewOnly && result.lastPage > MAX_PAGES && !allowOverPageLimit) {
+    const estimatedRows = result.total > 0 ? result.total : result.lastPage * 20;
+    throw new Error(
+      `Oalur result has ${result.lastPage} pages, estimated ${estimatedRows} rows, exceeding current limit ${MAX_PAGES} pages / ${MAX_PAGES * 20} rows. ` +
+      `Stop here and ask user whether to continue. If confirmed, rerun with --allow-over-400.`
+    );
+  }
 
-  // 5. 鍒嗛〉锛堟瘮杈冩暣椤?ASIN 闆嗗悎锛?
-  if (result.lastPage > 1) {
-    const actualLastPage = Math.min(result.lastPage, MAX_PAGES);
-    console.log(`  鏈€澶х炕椤? ${actualLastPage} 椤碉紙涓婇檺 ${actualLastPage * 20} 鏉★級`);
+  // 5. 閸掑棝銆夐敍鍫熺槷鏉堝啯鏆ｆい?ASIN 闂嗗棗鎮庨敍?
+  if (historicalNewOnly && result.data.length > 0 && allData.length === 0) {
+    console.log('Historical new-only mode: first page has no products listed within 6 months at snapshot; stop pagination');
+  } else if (result.lastPage > 1) {
+    const actualLastPage = allowOverPageLimit ? result.lastPage : Math.min(result.lastPage, MAX_PAGES);
+    console.log(`  extracting up to ${actualLastPage} pages, about ${actualLastPage * 20} rows`);
     const prevPageAsins = new Set(allData.map(d => d.asin));
     for (let p = 2; p <= actualLastPage; p++) {
       await page.evaluate((targetPage) => {
@@ -357,7 +961,7 @@ async function extractKeyword(page, keyword) {
         }
       }, p);
       await ensureVariantSkuEnabled(page);
-      let pageData = [];
+      let rawPageData = [];
       let changed = false;
       for (let wait = 0; wait < 10; wait++) {
         await new Promise(r => setTimeout(r, 1000));
@@ -365,25 +969,31 @@ async function extractKeyword(page, keyword) {
         if (check.data.length === 0) continue;
         const hasNewAsins = check.data.some(d => d.asin && !prevPageAsins.has(d.asin));
         if (hasNewAsins) {
-          pageData = check.data;
+          rawPageData = check.data;
           changed = true;
           break;
         }
       }
       if (!changed) { console.log(`  page ${p}: unchanged, skipped`); continue; }
-      pageData.forEach(d => prevPageAsins.add(d.asin));
+      rawPageData.forEach(d => prevPageAsins.add(d.asin));
+      const pageData = filterHistoricalNewCandidates(rawPageData);
+      if (historicalNewOnly && rawPageData.length > 0 && pageData.length === 0) {
+        console.log(`  page ${p}: 0/${rawPageData.length} rows within 6 months at snapshot; stop pagination`);
+        break;
+      }
       allData = allData.concat(pageData);
-      console.log(`  page ${p}: ${pageData.length} rows, accumulated: ${allData.length}`);
+      console.log(`  page ${p}: ${pageData.length}/${rawPageData.length} rows, accumulated: ${allData.length}`);
     }
   }
 
-  // 鏍囪鏉ユ簮鍏抽敭璇?
+  // Extract keyword data and merge results.
   allData.forEach(d => { d.sourceKeyword = keyword; });
   console.log(`"${keyword}" extracted: ${allData.length} rows`);
   return allData;
 }
 
 (async () => {
+  if (keywordIntentAnalysisPromise) await keywordIntentAnalysisPromise;
   const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
   const pages = await browser.pages();
   let page = pages.find(p => p.url().includes('oalur.com/insight/filter'));
@@ -391,14 +1001,14 @@ async function extractKeyword(page, keyword) {
     page = await browser.newPage();
     await gotoOalurFilter(page, 'initial page');
   }
-  console.log('鉁?宸茶繛鎺?Edge');
+  console.log('閴?瀹歌尪绻涢幒?Edge');
 
-  // 閫愪釜鍏抽敭璇嶆姄鍙?
+  // 闁劒閲滈崗鎶芥暛鐠囧秵濮勯崣?
   let allRawData = [];
   const keywordStats = {};
   for (let i = 0; i < keywords.length; i++) {
     const kw = keywords[i];
-    // 姣忎釜鍏抽敭璇嶉噸鏂板姞杞介〉闈紝纭繚鎼滅储鐙珛
+    // 濮ｅ繋閲滈崗鎶芥暛鐠囧秹鍣搁弬鏉垮鏉炰粙銆夐棃顫礉绾喕绻氶幖婊呭偍閻欘剛鐝?
     if (i > 0) {
       console.log('\nReloading page for next keyword...');
       await gotoOalurFilter(page, `keyword ${kw}`);
@@ -410,7 +1020,7 @@ async function extractKeyword(page, keyword) {
   }
 
   console.log(`\n${'='.repeat(50)}`);
-  // ASIN 鍘婚噸
+  // ASIN 閸樺鍣?
   const seenAsin = new Set();
   allRawData = allRawData.filter(item => {
     if (!item.asin || seenAsin.has(item.asin)) return false;
@@ -419,36 +1029,62 @@ async function extractKeyword(page, keyword) {
   });
   console.log(`ASIN deduplicated: ${allRawData.length} rows`);
 
-  const categorySelectionSource = allRawData;
+  const categorySupplementSummary = await supplementUnknownCategories(browser, allRawData);
+  let listingDateSupplementSummary = { checked: 0, supplemented: 0, failed: 0, details: [], skipped: !historicalNewOnly };
+  if (historicalNewOnly) {
+    listingDateSupplementSummary = await supplementMissingListingDates(browser, allRawData);
+    const beforeDateFiltered = allRawData.length;
+    allRawData = filterHistoricalNewCandidates(allRawData);
+    console.log(`Historical new-only mode after listing date supplement: ${allRawData.length}/${beforeDateFiltered} rows remain`);
+  }
+  const categorySelectionSource = allRawData.flatMap(item => {
+    const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
+    return categories.length ? categories.map(category => ({ ...item, category })) : [item];
+  });
   const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords);
   const targetCategory = categorySelectionResult.targetCategory;
   const targetCategories = categorySelectionResult.targetCategories;
   const targetCategorySet = new Set(targetCategories);
   const equivalentCategorySet = new Set(
     categorySelectionResult.categorySelection
-      .filter(d => d.functionalEquivalent)
+      .filter(d => d.titleIntentRescueCandidate || d.functionalEquivalent)
+      .filter(d => !targetCategorySet.has(d.category))
       .map(d => d.category)
   );
 
   const beforeParentAggregate = allRawData.length;
   allRawData = aggregateParentListings(allRawData).map(item => applyTargetCategoryMatch(item, targetCategorySet));
   console.log(`Parent listing aggregation: ${beforeParentAggregate} ASIN/variants -> ${allRawData.length} parent listings`);
+  let ratingsSupplementSummary = { checked: 0, supplemented: 0, failed: 0, details: [], skipped: true };
 
   const catCount = {};
   categorySelectionSource.forEach(d => {
-    const cat = d.category || '未识别';
+    const cat = d.category || 'unknown';
     catCount[cat] = (catCount[cat] || 0) + 1;
   });
   const sortedCats = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
   console.log('\nCategory distribution (ASIN/variant rows):');
   sortedCats.forEach(([cat, count]) => console.log(`  [${count}] ${cat}`));
+  const rescuePriceGuard = buildRescuePriceGuard(
+    allRawData,
+    item => listingMatchesTargetCategories(item, targetCategorySet)
+  );
+  if (rescuePriceGuard.enabled) {
+    console.log(`Rescue price guard: target n=${rescuePriceGuard.targetSampleSize}, median=$${rescuePriceGuard.median}, allowed $${rescuePriceGuard.lowerLimit}-$${rescuePriceGuard.upperLimit}`);
+  } else {
+    console.log(`Rescue price guard disabled: ${rescuePriceGuard.reason}`);
+  }
 
   const listingMatchesFilter = (item) => {
-    if (listingMatchesTargetCategories(item, targetCategorySet)) return true;
+    if (listingMatchesTargetCategories(item, targetCategorySet)) {
+      item.targetCategoryDirectMatched = true;
+      return true;
+    }
     const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
     const equivalentCategoryHit = categories.some(category => equivalentCategorySet.has(category));
     if (!equivalentCategoryHit) return false;
     const rescued = listingMatchesKeywordIntent(item, keywords);
+    if (rescued && !rescuePriceMatches(item, rescuePriceGuard)) return false;
     if (rescued) {
       const rescuedRows = (Array.isArray(item.variantRows) ? item.variantRows : [])
         .filter(row => equivalentCategorySet.has(row.category) && keywords.some(keyword => titleMatchesKeywordIntent(row.title || item.title, keyword)));
@@ -458,28 +1094,47 @@ async function extractKeyword(page, keyword) {
     }
     return rescued;
   };
-  const filtered = allRawData.filter(d => listingMatchesFilter(d));
-  const excluded = allRawData.filter(d => !listingMatchesFilter(d));
+  const matched = [];
+  const notMatched = [];
+  allRawData.forEach(item => {
+    if (listingMatchesFilter(item)) matched.push(item);
+    else notMatched.push(item);
+  });
+  const filtered = matched;
+  const excluded = notMatched;
+  if (!historicalNewOnly) {
+    listingDateSupplementSummary = await supplementMissingListingDates(browser, filtered);
+  }
+  ratingsSupplementSummary = await supplementZeroParentRatings(browser, filtered);
   console.log(`\nTarget categories: ${targetCategories.join(' | ')}`);
   console.log(`Filtered: ${allRawData.length} -> ${filtered.length}, excluded ${excluded.length}`);
 
-  // 淇濆瓨
+  // 娣囨繂鐡?
   const output = {
     keywords: keywords,
     keyword: keywords.join(' + '),
-    bsrRange: '1-' + maxBsr,
+    bsrRange: minBsr + '-' + maxBsr,
     timeFilter: timeFilterLabel || '近30天',
+    historicalNewOnly,
+    survivalBaseline: survivalBaseline || null,
+    historicalNewOnlyRule: historicalNewOnly ? 'sort by listing date and keep products listed within 6 months at historical snapshot' : null,
     rawTotal: allRawData.length,
     total: allRawData.length,
     allCount: allRawData.length,
     filteredCount: filtered.length,
     excludedCount: excluded.length,
+    targetMatchedCount: matched.length,
+    salesFloorExcludedCount: 0,
     targetCategory,
     targetCategories,
     equivalentCandidateCategories: [...equivalentCategorySet],
+    rescuePriceGuard,
     categorySelection: categorySelectionResult.categorySelection,
     categoryDistribution: sortedCats,
     keywordStats,
+    ratingsSupplementSummary,
+    categorySupplementSummary,
+    listingDateSupplementSummary,
     data: filtered,
     excluded
   };
@@ -487,7 +1142,7 @@ async function extractKeyword(page, keyword) {
   fs.writeFileSync(outFile, JSON.stringify(output, null, 2));
   console.log(`\nData saved: ${outFile}`);
 
-  // 鎽樿
+  // 閹芥顩?
   console.log(`\n${'='.repeat(50)}`);
   console.log('Extraction summary');
   console.log('='.repeat(50));
