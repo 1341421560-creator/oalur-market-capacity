@@ -32,6 +32,20 @@ const LOCAL_INTENT_HINTS = {
   candy: ['candy', 'chocolate', 'gummy', 'caramel', 'fondant', 'bonbon', 'truffle']
 };
 
+const SPEC_MODIFIER_TOKENS = new Set([
+  'gallon', 'gal', 'quart', 'qt', 'oz', 'ounce', 'liter', 'litre', 'ml', 'lb', 'inch',
+  'ft', 'cm', 'mm', 'small', 'large', 'xl', 'mini', 'wide', 'tall', 'clear', 'white',
+  'black', 'silver', 'gold', 'plastic', 'glass', 'metal', 'stainless', 'steel', 'wood',
+  'wooden', 'pack', 'set', 'with'
+]);
+
+const GOOGLE_TRENDS_CORE_SYNONYMS = {
+  'drink dispenser': ['beverage dispenser'],
+  'water dispenser': ['beverage dispenser'],
+  'beverage tub': ['drink tub'],
+  'salt pepper grinder': ['pepper grinder', 'salt grinder']
+};
+
 function unique(values) {
   return [...new Set((values || [])
     .map(value => String(value || '').trim().toLowerCase())
@@ -42,15 +56,35 @@ function normalizeKeyword(keyword) {
   return keywordTokens(keyword).join(' ');
 }
 
+function localKeywordCorePlan(keyword) {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  const tokens = keywordTokens(keyword);
+  const coreTokens = tokens.filter(token => !SPEC_MODIFIER_TOKENS.has(token) && !/^\d/.test(token));
+  const coreKeyword = coreTokens.length >= 2 ? coreTokens.join(' ') : normalizedKeyword;
+  const candidates = [coreKeyword];
+  for (const [phrase, synonyms] of Object.entries(GOOGLE_TRENDS_CORE_SYNONYMS)) {
+    if (coreKeyword.includes(phrase)) candidates.push(...synonyms);
+  }
+  return {
+    coreKeyword,
+    googleTrendsKeywords: unique(candidates).filter(Boolean),
+    googleTrendsStrategy: coreKeyword && coreKeyword !== normalizedKeyword
+      ? 'local-agent-stripped-spec-modifiers'
+      : 'local-agent-keyword-is-core'
+  };
+}
+
 function localKeywordIntentAnalysis(keyword, extraNotes = []) {
   const tokens = keywordTokens(keyword);
   const shapeToken = tokens[tokens.length - 1] || '';
-  const modifierTokens = tokens.slice(0, -1);
+  const modifierTokens = tokens.slice(0, -1).filter(token => !SPEC_MODIFIER_TOKENS.has(token) && !/^\d/.test(token));
   const shape = unique([shapeToken, ...(LOCAL_SHAPE_HINTS[shapeToken] || [])]);
   const intent = unique(modifierTokens.flatMap(token => [token, ...(LOCAL_INTENT_HINTS[token] || [])]));
+  const corePlan = localKeywordCorePlan(keyword);
   return {
     keyword,
     normalizedKeyword: normalizeKeyword(keyword),
+    ...corePlan,
     source: 'local-fallback',
     confidence: 'low',
     shape,
@@ -68,9 +102,11 @@ function localKeywordIntentAnalysis(keyword, extraNotes = []) {
 
 function sanitizeAiAnalysis(keyword, raw) {
   const result = raw && typeof raw === 'object' ? raw : {};
+  const corePlan = localKeywordCorePlan(keyword);
   return {
     keyword,
     normalizedKeyword: normalizeKeyword(keyword),
+    ...corePlan,
     source: 'ai',
     confidence: ['high', 'medium', 'low'].includes(result.confidence) ? result.confidence : 'medium',
     shape: unique(result.shape),
@@ -204,6 +240,8 @@ async function main() {
   console.log(JSON.stringify(analysis.keywords.map(item => ({
     keyword: item.keyword,
     source: item.source,
+    coreKeyword: item.coreKeyword,
+    googleTrendsKeywords: item.googleTrendsKeywords,
     shape: item.shape,
     intent: item.intent,
     equivalent: item.equivalent,
@@ -221,5 +259,7 @@ if (require.main === module) {
 module.exports = {
   analyzeKeywordIntent,
   analyzeKeywords,
+  localKeywordIntentAnalysis,
+  localKeywordCorePlan,
   writeKeywordIntentAnalysis
 };

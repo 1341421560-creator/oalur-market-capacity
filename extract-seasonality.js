@@ -8,7 +8,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, execFileSync } = require('child_process');
+const { execFileSync } = require('child_process');
+const { localKeywordIntentAnalysis } = require('./keyword-intent-ai');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -66,6 +67,8 @@ if (!rawKeyword || !keyword) {
 const gtrendsFile = path.join(dirs.data, safeName + '-google-trends.json');
 const oalurVolFile = path.join(dirs.data, safeName + '-oalur-volume.json');
 const asinTrendsFile = path.join(dirs.data, safeName + '-asin-trends.json');
+const keywordIntentFile = path.join(dirs.data, 'keyword-intent-analysis.json');
+const nodeBin = process.execPath;
 
 function googleTrendsQuality(data) {
   const points = data?.data5Years || data?.data || [];
@@ -92,19 +95,87 @@ function googleTrendsQuality(data) {
   return { ok: true, reason: '', points: values.length, nonzero, nonzeroRate, max, avg };
 }
 
-function googleTrendsFallbackKeyword(value) {
-  // Local-agent fallback: use a broader core term when the full long-tail query is too sparse for Google Trends.
-  const cleaned = String(value || '').trim().replace(/\s+/g, ' ');
-  const beforeFor = cleaned.split(/\s+for\s+/i)[0]?.trim();
-  if (beforeFor && beforeFor.split(/\s+/).length >= 2 && beforeFor.toLowerCase() !== cleaned.toLowerCase()) {
-    return beforeFor;
+function runLocalKeywordAgent(keyword) {
+  const analysis = localKeywordIntentAnalysis(keyword, [
+    'Google Trends routing uses this local-agent core keyword plan before falling back from sparse long-tail data.'
+  ]);
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    model: null,
+    usedOpenAI: false,
+    filteringImpact: 'none',
+    warning: 'Local keyword agent output is used for Google Trends core-term routing; product filtering still uses category and market data rules.',
+    keywords: [analysis]
+  };
+  try {
+    fs.writeFileSync(keywordIntentFile, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch (error) {
+    console.warn(`Keyword intent analysis write skipped: ${error.message}`);
   }
-  return cleaned;
+  return analysis;
+}
+
+function uniqueStrings(values) {
+  return [...new Set((values || [])
+    .map(value => String(value || '').trim().replace(/\s+/g, ' '))
+    .filter(Boolean))];
+}
+
+function googleTrendsFallbackKeywords(value, keywordAgent) {
+  const agentCandidates = uniqueStrings([
+    ...(keywordAgent?.googleTrendsKeywords || []),
+    keywordAgent?.coreKeyword
+  ]);
+  const cleaned = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const agentFallbacks = agentCandidates.filter(candidate => {
+    const normalized = candidate.toLowerCase();
+    return normalized && normalized !== cleaned && normalized.split(/\s+/).length >= 2;
+  });
+  if (agentFallbacks.length) return agentFallbacks;
+
+  // Defensive fallback if the local-agent payload is unavailable.
+  if (!cleaned) return [];
+
+  const candidates = [];
+  const beforeFor = cleaned.split(/\s+for\s+/i)[0]?.trim();
+  if (beforeFor && beforeFor !== cleaned) candidates.push(beforeFor);
+
+  const specWords = new Set([
+    'gallon', 'gallons', 'gal', 'quart', 'quarts', 'qt', 'oz', 'ounce', 'ounces',
+    'liter', 'liters', 'litre', 'litres', 'ml', 'lb', 'lbs', 'inch', 'inches',
+    'ft', 'feet', 'cm', 'mm', 'small', 'large', 'xl', 'mini', 'wide', 'tall',
+    'clear', 'white', 'black', 'silver', 'gold', 'plastic', 'glass', 'metal',
+    'stainless', 'steel', 'wood', 'wooden', 'pack', 'packs', 'set', 'with'
+  ]);
+  const tokens = cleaned
+    .split(/\s+/)
+    .filter(token => token && !/^\d+([./-]\d+)?$/.test(token))
+    .filter(token => !/^\d+(oz|qt|gal|ml|l|lb|lbs|in|inch|cm|mm)?$/.test(token))
+    .filter(token => !specWords.has(token));
+
+  if (tokens.length >= 2) candidates.push(tokens.join(' '));
+  if (tokens.length >= 3) candidates.push(tokens.slice(-2).join(' '));
+
+  const synonymPhrases = {
+    'drink dispenser': ['beverage dispenser'],
+    'water dispenser': ['beverage dispenser'],
+    'beverage tub': ['drink tub'],
+    'ice bucket': ['ice bucket'],
+    'coffee maker': ['coffee maker'],
+    'salt pepper grinder': ['pepper grinder', 'salt grinder']
+  };
+  for (const candidate of [...candidates]) {
+    for (const [phrase, synonyms] of Object.entries(synonymPhrases)) {
+      if (candidate.includes(phrase)) candidates.push(...synonyms);
+    }
+  }
+
+  return uniqueStrings(candidates).filter(candidate => candidate !== cleaned && candidate.split(/\s+/).length >= 2);
 }
 
 function runGoogleTrendsExtraction(queryKeyword, outputFile) {
   execFileSync(
-    'node',
+    nodeBin,
     [path.join(SKILL_DIR, 'extract-google-trends.js'), queryKeyword, outputFile],
     { stdio: 'inherit', timeout: 90000 }
   );
@@ -532,6 +603,9 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   console.log(`  关键词: ${keyword}`);
   console.log('='.repeat(50));
 
+  const keywordAgent = runLocalKeywordAgent(keyword);
+  console.log(`Local keyword agent: core="${keywordAgent.coreKeyword}", Google Trends candidates=${(keywordAgent.googleTrendsKeywords || []).join(', ') || '--'}`);
+
   // ─── Step 1: Google Trends ───
   let gtData = null;
   if (fs.existsSync(gtrendsFile)) {
@@ -568,27 +642,44 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
 
   if (gtData && !gtData.error) {
     let quality = googleTrendsQuality(gtData);
-    const fallbackKeyword = googleTrendsFallbackKeyword(keyword);
-    if (!quality.ok && fallbackKeyword && fallbackKeyword.toLowerCase() !== keyword.toLowerCase()) {
+    const fallbackKeywords = googleTrendsFallbackKeywords(keyword, keywordAgent);
+    if (!quality.ok && fallbackKeywords.length) {
       const fallbackReason = quality.reason;
-      console.log(`Google Trends data sparse for "${keyword}", retrying with core term "${fallbackKeyword}": ${fallbackReason}`);
-      try {
-        gtData = runGoogleTrendsExtraction(fallbackKeyword, gtrendsFile);
-        quality = googleTrendsQuality(gtData);
-        gtData = annotateGoogleTrendsData(gtData, keyword, fallbackKeyword, quality, fallbackReason);
-        fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
-      } catch (e) {
-        console.log(`Google Trends fallback retry failed: ${e.message}`);
+      console.log(`Google Trends data sparse for "${keyword}", retrying with local core-term candidates: ${fallbackKeywords.join(', ')}`);
+      let bestFallback = null;
+      for (const fallbackKeyword of fallbackKeywords) {
+        try {
+          const fallbackData = runGoogleTrendsExtraction(fallbackKeyword, gtrendsFile);
+          const fallbackQuality = googleTrendsQuality(fallbackData);
+          const annotated = annotateGoogleTrendsData(fallbackData, keyword, fallbackKeyword, fallbackQuality, fallbackReason);
+          console.log(`Google Trends core candidate "${fallbackKeyword}": ${fallbackQuality.ok ? 'ok' : fallbackQuality.reason}`);
+          if (!bestFallback || (fallbackQuality.nonzeroRate || 0) > (bestFallback.quality.nonzeroRate || 0)) {
+            bestFallback = { data: annotated, quality: fallbackQuality };
+          }
+          if (fallbackQuality.ok) {
+            gtData = annotated;
+            quality = fallbackQuality;
+            break;
+          }
+        } catch (e) {
+          console.log(`Google Trends fallback "${fallbackKeyword}" failed: ${e.message}`);
+        }
+      }
+      if (!quality.ok && bestFallback) {
+        gtData = bestFallback.data;
+        quality = bestFallback.quality;
+      }
+      if (!gtData || !Array.isArray(gtData.data5Years)) {
         gtData = {
           keyword,
           requestedKeyword: keyword,
-          queryKeyword: fallbackKeyword,
-          error: `Google Trends fallback failed: ${e.message}`,
+          queryKeyword: fallbackKeywords[0],
+          error: `Google Trends fallback failed for all candidates: ${fallbackReason}`,
           previousError: fallbackReason,
           extractedAt: new Date().toISOString()
         };
-        fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
       }
+      fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
     } else {
       gtData = annotateGoogleTrendsData(gtData, keyword, gtData.queryKeyword || gtData.keyword || keyword, quality);
       fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
@@ -606,8 +697,9 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   } else {
     console.log(`\n📊 Step 2/3: 提取 Oalur 搜索量数据...`);
     try {
-      execSync(
-        `node "${path.join(SKILL_DIR, 'extract-oalur-search-volume.js')}" "${keyword}" "${oalurVolFile}"`,
+      execFileSync(
+        nodeBin,
+        [path.join(SKILL_DIR, 'extract-oalur-search-volume.js'), keyword, oalurVolFile],
         { stdio: 'inherit', timeout: 120000 }
       );
       if (fs.existsSync(oalurVolFile)) {
@@ -650,7 +742,7 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
 
         try {
           execFileSync(
-            'node',
+            nodeBin,
             [path.join(SKILL_DIR, 'extract-asin-trends.js'), asinList, asinTrendsFile],
             { stdio: 'inherit', timeout: 240000 }
           );

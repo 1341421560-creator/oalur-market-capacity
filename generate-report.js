@@ -2537,12 +2537,15 @@ if (seasonalityData && seasonalityData.seasonality) {
   const gtPoints = (seasonalityData.googleTrendsData?.data5Years || []).slice(-156);
   const gtLabels = gtPoints.map(p => p.date);
   const gtValues = gtPoints.map(p => Number(p.value)).filter(Number.isFinite);
+  const googleTrendsHasTimeline = gtValues.length > 0;
   const googleTrendsQueryBlock = googleTrendsQueryKeyword && googleTrendsRequestedKeyword && googleTrendsQueryKeyword !== googleTrendsRequestedKeyword
     ? `<div style="margin-top:8px;padding:10px 12px;background:#fff7e6;border:1px solid #ffd591;border-radius:8px;font-size:12px;line-height:1.8;color:#8a4b08;"><strong>Google Trends 查询词已降级：</strong>原词 ${escapeHtml(googleTrendsRequestedKeyword)} 数据过稀疏，改用核心词 ${escapeHtml(googleTrendsQueryKeyword)}。${googleTrendsFallbackReason ? `原因：${escapeHtml(googleTrendsFallbackReason)}` : ''}</div>`
     : '';
   const googleTrendsStatusBlock = [
     googleTrendsError
-      ? `<div style="margin-top:8px;padding:10px 12px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;font-size:12px;line-height:1.8;color:#a8071a;"><strong>Google Trends 抓取失败：</strong>${escapeHtml(googleTrendsError)}</div>`
+      ? googleTrendsHasTimeline
+        ? `<div style="margin-top:8px;padding:10px 12px;background:#fff7e6;border:1px solid #ffd591;border-radius:8px;font-size:12px;line-height:1.8;color:#8a4b08;"><strong>Google Trends 数据过稀疏：</strong>${escapeHtml(googleTrendsError)}。已抓到时间序列，但不参与季节性判断。</div>`
+        : `<div style="margin-top:8px;padding:10px 12px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;font-size:12px;line-height:1.8;color:#a8071a;"><strong>Google Trends 抓取失败：</strong>${escapeHtml(googleTrendsError)}</div>`
       : '',
     googleTrendsQueryBlock
   ].filter(Boolean).join('');
