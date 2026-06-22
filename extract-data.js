@@ -2,9 +2,15 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { activatePage } = require('./browser-page-utils');
 const { selectSurvivalBaselinePeriod } = require('./survival-baseline');
 const { selectTargetCategories, listingMatchesKeywordIntent, titleMatchesKeywordIntent } = require('./category-selector');
 const { writeKeywordIntentAnalysis } = require('./keyword-intent-ai');
+const {
+  appendReferenceCategoryArgs,
+  buildReferenceCategorySelectionSummary,
+  parseReferenceCategoryArgs
+} = require('./reference-categories');
 const {
   aggregateParentListings,
   applyTargetCategoryMatch,
@@ -19,6 +25,7 @@ const OALUR_NAV_TIMEOUT_MS = 30000;
 
 async function gotoOalurFilter(page, contextLabel = 'Oalur page') {
   try {
+    await activatePage(page);
     await page.goto(OALUR_FILTER_URL, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
   } catch (error) {
     if (String(error?.message || '').toLowerCase().includes('timeout')) {
@@ -153,6 +160,7 @@ const allowOverPageLimit = process.argv.includes('--allow-over-400') || process.
 const bsrMinIdx = process.argv.indexOf('--bsr-min');
 const minBsr = bsrMinIdx > -1 ? String(process.argv[bsrMinIdx + 1] || '1') : String(process.env.OALUR_BSR_MIN || '1');
 const salesFloorMin = Number(process.env.OALUR_SALES_FLOOR_MIN || 200);
+const referenceCategories = parseReferenceCategoryArgs(process.argv.slice(2));
 let timeFilterLabel = null; // Example: 2025年12月
 if (timeFilterRaw) {
   const [y, m] = timeFilterRaw.split('-');
@@ -244,11 +252,12 @@ if (keywords.length > 1) {
     if (historicalNewOnly) childArgs.push('--historical-new-only');
     if (minBsr !== '1') childArgs.push('--bsr-min', minBsr);
     if (allowOverPageLimit) childArgs.push('--allow-over-400');
+    appendReferenceCategoryArgs(childArgs, referenceCategories);
     childArgs.push('--skip-keyword-intent-analysis');
     runNodeScript(childArgs, `extract ${kw}`);
     return file;
   });
-  runNodeScript([path.join(__dirname, 'merge-data.js'), ...dataFiles, outFile], 'merge keyword data');
+  runNodeScript([path.join(__dirname, 'merge-data.js'), ...dataFiles, '--output', outFile], 'merge keyword data');
   console.log(`\nMerged multi-keyword data saved: ${outFile}`);
   process.exit(0);
 }
@@ -682,6 +691,7 @@ function productInformationUrl(asin) {
 async function gotoProductInformation(page, asin) {
   const url = productInformationUrl(asin);
   try {
+    await activatePage(page);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
   } catch (error) {
     if (String(error?.message || '').toLowerCase().includes('timeout')) {
@@ -896,6 +906,7 @@ async function extractKeyword(page, keyword) {
   await new Promise(r => setTimeout(r, 500));
 
   // 2. Set BSR range.
+  console.log(`Applying BSR range to page: ${minBsr}-${maxBsr}`);
   await setBsrRange(page, minBsr, maxBsr);
   await new Promise(r => setTimeout(r, 500));
 
@@ -1001,6 +1012,7 @@ async function extractKeyword(page, keyword) {
     page = await browser.newPage();
     await gotoOalurFilter(page, 'initial page');
   }
+  await activatePage(page);
   console.log('閴?瀹歌尪绻涢幒?Edge');
 
   // 闁劒閲滈崗鎶芥暛鐠囧秵濮勯崣?
@@ -1041,9 +1053,13 @@ async function extractKeyword(page, keyword) {
     const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
     return categories.length ? categories.map(category => ({ ...item, category })) : [item];
   });
-  const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords);
+  const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
   const targetCategory = categorySelectionResult.targetCategory;
   const targetCategories = categorySelectionResult.targetCategories;
+  const referenceCategorySelection = buildReferenceCategorySelectionSummary(
+    referenceCategories,
+    categorySelectionResult.categorySelection
+  );
   const targetCategorySet = new Set(targetCategories);
   const equivalentCategorySet = new Set(
     categorySelectionResult.categorySelection
@@ -1128,6 +1144,8 @@ async function extractKeyword(page, keyword) {
     targetCategory,
     targetCategories,
     equivalentCandidateCategories: [...equivalentCategorySet],
+    referenceCategories,
+    referenceCategorySelection,
     rescuePriceGuard,
     categorySelection: categorySelectionResult.categorySelection,
     categoryDistribution: sortedCats,

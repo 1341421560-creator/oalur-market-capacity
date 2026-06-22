@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
+const { activatePage } = require('./browser-page-utils');
 
 const [, , lifecyclePath, marketDataPath, outputPathArg] = process.argv;
 const CPC_SAMPLE_LIMIT = 30;
@@ -196,6 +197,7 @@ async function getAcosData(page, asin) {
 async function getAcosDataInNewPage(browser, asin) {
   const page = await browser.newPage();
   try {
+    await activatePage(page);
     page.setDefaultNavigationTimeout(30000);
     await page.goto('https://vip.oalur.com/tool/acos?site=US', { waitUntil: 'domcontentloaded', timeout: 30000 });
     return await getAcosData(page, asin);

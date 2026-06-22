@@ -410,8 +410,29 @@ const rescuePriceGuard = jsonData.rescuePriceGuard || {};
 const rescuePriceRuleText = rescuePriceGuard.enabled
   ? `仅作用于标题意图救回；动态 P90=${rescuePriceGuard.p90}，上限=P90×1.1=$${rescuePriceGuard.upperLimit}，样本=${rescuePriceGuard.targetSampleSize} 个目标类目产品`
   : '未启用';
+const referenceCategoriesForDisplay = Array.isArray(jsonData.referenceCategories) ? jsonData.referenceCategories.filter(Boolean) : [];
+const referenceCategoryDisplay = referenceCategoriesForDisplay.length ? referenceCategoriesForDisplay.join('；') : '无';
+const referenceCategoryScopeText = referenceCategoriesForDisplay.length
+  ? '直接作为目标类目；不参与类目评分，不额外跳过标题意图/价格守卫，不参与后续评分'
+  : '未提供参考类目';
+const referenceSelection = jsonData.referenceCategorySelection || {};
+const referenceMatchedRows = (Array.isArray(jsonData.categorySelection) ? jsonData.categorySelection : []).filter(row => row.referenceCategoryMatch);
+const referenceMatchedCount = Number.isFinite(Number(referenceSelection.matchedCount))
+  ? Number(referenceSelection.matchedCount)
+  : referenceMatchedRows.length;
+const referenceUnmatchedCount = Number.isFinite(Number(referenceSelection.unmatchedCount))
+  ? Number(referenceSelection.unmatchedCount)
+  : Math.max(0, referenceCategoriesForDisplay.length - new Set(referenceMatchedRows.map(row => String(row.referenceCategoryMatchedBy || '').toLowerCase()).filter(Boolean)).size);
+const referenceCategoryMatchSummary = referenceCategoriesForDisplay.length
+  ? `命中 ${referenceMatchedCount} 个类目，未命中 ${referenceUnmatchedCount} 个参考类目`
+  : '无';
 function categoryMeetsTargetThreshold(row) {
-  if (!row || row.functionalEquivalent) return false;
+  if (!row) return false;
+  const referenceConfirmedTarget = row.referenceCategoryMatch &&
+    row.referenceCategoryMatchType === 'exact' &&
+    Number(row.baseScore) >= 35 &&
+    (row.shapeHit || Number(row.titleAllRate) >= 0.25 || Number(row.titleAnyRate) >= 0.7);
+  if (row.functionalEquivalent && !referenceConfirmedTarget) return false;
   const score = Number(row.score);
   const count = Number(row.count);
   const titleAllRate = Number(row.titleAllRate);
@@ -423,9 +444,14 @@ const categorySelectionRows = Array.isArray(jsonData.categorySelection) ? jsonDa
 const selectedCategoryRows = categorySelectionRows.filter(row => targetCategorySetForDisplay.has(row.category));
 const qualifiedCategoryRows = categorySelectionRows.filter(categoryMeetsTargetThreshold);
 const fallbackTargetRows = selectedCategoryRows.filter(row => !categoryMeetsTargetThreshold(row));
-const targetCategorySelectionNote = fallbackTargetRows.length
-  ? `<span style="color:#ad4e00;font-weight:600;">未发现达到目标类目门槛的类目，当前目标类目为兜底选择，请重点复核过滤结果。</span> 最高分类目：${escapeHtml(categorySelectionRows[0]?.category || '未知')}（${Number(categorySelectionRows[0]?.score || 0).toFixed(1)}分）；目标门槛：相关分≥110且父体数≥3，或相关分≥180。`
-  : `已按目标类目门槛选中：${qualifiedCategoryRows.length || selectedCategoryRows.length} 个达标类目。目标门槛：相关分≥110且父体数≥3，或相关分≥180。`;
+const referenceCategorySelectionSuffix = referenceCategoriesForDisplay.length
+  ? ` 参考类目已直接作为目标类目（${referenceCategoryMatchSummary}）。`
+  : ' 未使用参考类目。';
+const targetCategorySelectionNote = referenceCategoriesForDisplay.length
+  ? `输入参考类目直接作为目标类目，并与原评分规则选出的目标类目合并去重；其它非目标类目仍按原规则进入救回候选类目复核。${referenceCategorySelectionSuffix}`
+  : fallbackTargetRows.length
+  ? `<span style="color:#ad4e00;font-weight:600;">未发现达到目标类目门槛的类目，当前目标类目为兜底选择，请重点复核过滤结果。</span> 最高分类目：${escapeHtml(categorySelectionRows[0]?.category || '未知')}（${Number(categorySelectionRows[0]?.score || 0).toFixed(1)}分）；目标门槛：相关分≥110且父体数≥3，或相关分≥180。${referenceCategorySelectionSuffix}`
+  : `已按目标类目门槛选中：${qualifiedCategoryRows.length || selectedCategoryRows.length} 个达标类目。目标门槛：相关分≥110且父体数≥3，或相关分≥180。${referenceCategorySelectionSuffix}`;
 const metricTargetCategories = Array.isArray(jsonData.targetCategories) && jsonData.targetCategories.length
   ? jsonData.targetCategories
   : [jsonData.targetCategory].filter(Boolean);
@@ -550,6 +576,7 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
     const flags = [];
     if (share >= 0.05) flags.push('数量占比高');
     if (Number.isFinite(score) && score >= 35) flags.push('相关分较高');
+    if (selection.referenceCategoryMatch) flags.push('参考类目命中但未入选');
     if (rescueSet.has(category)) flags.push('救回候选但未通过标题/价格');
     if (targetSet.has(category)) flags.push('目标类目内被排除');
     return {
@@ -1647,6 +1674,9 @@ const replacements = {
   '{{MAX_BSR}}': bsrMax.toLocaleString(),
   '{{TARGET_CATEGORY}}': targetCategoryDisplay,
   '{{TARGET_CATEGORY_SELECTION_NOTE}}': targetCategorySelectionNote,
+  '{{REFERENCE_CATEGORIES}}': referenceCategoryDisplay,
+  '{{REFERENCE_CATEGORY_SCOPE}}': referenceCategoryScopeText,
+  '{{REFERENCE_CATEGORY_MATCH_SUMMARY}}': referenceCategoryMatchSummary,
   '{{RESCUE_CATEGORIES}}': rescueCategoryDisplay,
   '{{RESCUE_PRICE_RULE}}': rescuePriceRuleText,
   '{{ALL_COUNT}}': jsonData.allCount || 0,
@@ -2482,6 +2512,9 @@ if (seasonalityData && seasonalityData.seasonality) {
   };
   const normalizeSeasonalityType = (type) => {
     const raw = String(type || '');
+    if (raw.includes('确认') && raw.includes('强')) return '确认强季节性';
+    if (raw.includes('疑似') && raw.includes('强')) return '疑似强季节性';
+    if (raw.includes('疑似') && raw.includes('弱')) return '疑似弱季节性';
     if (raw.includes('强') || raw.includes('寮哄')) return '强季节性';
     if (raw.includes('弱') || raw.includes('寮卞')) return '弱季节性';
     if ((s.seasonalityScore || 0) >= 60) return '强季节性';
@@ -2496,14 +2529,23 @@ if (seasonalityData && seasonalityData.seasonality) {
   };
   const sType = normalizeSeasonalityType(s.seasonalityType);
   const sScore = s.seasonalityScore ?? '-';
-  const sColor = sType === '强季节性' ? '#3b82f6' : sType === '弱季节性' ? '#eab308' : '#22c55e';
+  const sColor = sType.includes('强') ? '#3b82f6' : sType.includes('弱') ? '#eab308' : '#22c55e';
   const googleTrendsError = seasonalityData.googleTrendsData?.error || '';
+  const googleTrendsRequestedKeyword = seasonalityData.googleTrendsData?.requestedKeyword || seasonalityData.seasonalityKeyword || seasonalityData.keyword || '';
+  const googleTrendsQueryKeyword = seasonalityData.googleTrendsData?.queryKeyword || seasonalityData.googleTrendsData?.keyword || googleTrendsRequestedKeyword;
+  const googleTrendsFallbackReason = seasonalityData.googleTrendsData?.keywordFallbackReason || '';
   const gtPoints = (seasonalityData.googleTrendsData?.data5Years || []).slice(-156);
   const gtLabels = gtPoints.map(p => p.date);
   const gtValues = gtPoints.map(p => Number(p.value)).filter(Number.isFinite);
-  const googleTrendsStatusBlock = googleTrendsError
-    ? `<div style="margin-top:8px;padding:10px 12px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;font-size:12px;line-height:1.8;color:#a8071a;"><strong>Google Trends 抓取失败：</strong>${escapeHtml(googleTrendsError)}</div>`
+  const googleTrendsQueryBlock = googleTrendsQueryKeyword && googleTrendsRequestedKeyword && googleTrendsQueryKeyword !== googleTrendsRequestedKeyword
+    ? `<div style="margin-top:8px;padding:10px 12px;background:#fff7e6;border:1px solid #ffd591;border-radius:8px;font-size:12px;line-height:1.8;color:#8a4b08;"><strong>Google Trends 查询词已降级：</strong>原词 ${escapeHtml(googleTrendsRequestedKeyword)} 数据过稀疏，改用核心词 ${escapeHtml(googleTrendsQueryKeyword)}。${googleTrendsFallbackReason ? `原因：${escapeHtml(googleTrendsFallbackReason)}` : ''}</div>`
     : '';
+  const googleTrendsStatusBlock = [
+    googleTrendsError
+      ? `<div style="margin-top:8px;padding:10px 12px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;font-size:12px;line-height:1.8;color:#a8071a;"><strong>Google Trends 抓取失败：</strong>${escapeHtml(googleTrendsError)}</div>`
+      : '',
+    googleTrendsQueryBlock
+  ].filter(Boolean).join('');
   const searchSeries = trendSeries(seasonalityData.oalurVolumeData?.searchesTrend);
   const oppSeries = trendSeries(seasonalityData.oalurVolumeData?.oppIndexTrend);
   const productSeries = trendSeries(seasonalityData.oalurVolumeData?.productTotalNumTrend);
@@ -2681,24 +2723,25 @@ if (seasonalityData && seasonalityData.seasonality) {
     if (!Number.isFinite(maxAvg) || maxAvg <= 0) return [];
     const positive = avgs.filter(v => v > 0).sort((a, b) => a - b);
     const medianAvg = positive.length ? positive[Math.floor(positive.length / 2)] : 0;
-    const sortedDesc = [...positive].sort((a, b) => b - a);
-    const secondAvg = sortedDesc[1] || 0;
     const minAvg = positive[0] || 0;
-    const hasStablePeak = medianAvg > 0
-      && minAvg > 0
-      && maxAvg / medianAvg >= 1.5
-      && maxAvg / Math.max(secondAvg, 1) >= 1.25
-      && maxAvg / minAvg >= 2;
-    if (!hasStablePeak) return [];
-    return months.filter((m, i) => avgs[i] >= maxAvg * 0.9);
+    const peakValleyRatio = minAvg > 0 ? maxAvg / minAvg : maxAvg;
+    if (!(medianAvg > 0) || peakValleyRatio < 1.25) return [];
+    const displayPeakThreshold = Math.max(maxAvg * 0.84, medianAvg * 1.08);
+    return months.filter((m, i) => {
+      const prev = avgs[(i + 11) % 12];
+      const next = avgs[(i + 1) % 12];
+      return avgs[i] >= displayPeakThreshold && avgs[i] >= prev && avgs[i] >= next;
+    });
   };
-  const googlePeakMonths = computeGooglePeakMonths();
+  const googlePeakMonths = Array.isArray(s.googlePeakMonths) && s.googlePeakMonths.length
+    ? s.googlePeakMonths
+    : computeGooglePeakMonths();
   const googlePeakNote = googleTrendsError
     ? `Google Trends 抓取失败：${googleTrendsError}。Google 峰值月暂不参与判断。`
     : googlePeakMonths.length > 0
-      ? 'Google 峰值月按 5 年周级搜索兴趣汇总为多年月均值，并要求最高月相对中位月、次高月和最低月都有明显优势；达到最高月均值 90% 以上的月份计为稳定峰值月。'
+      ? 'Google 峰值月按 5 年周级搜索兴趣汇总为多年月均值；达到最高月均值 85% 以上且高于中位月 10% 的月份计为展示峰值月。峰值月展示不等于强季节性确认。'
       : googleTrendPointsForPeak.length > 0
-        ? 'Google Trends 有数据，但最高月相对中位月、次高月或最低月的优势不足，不能认定为稳定峰值月。'
+        ? 'Google Trends 有数据，但月均值相对中位月优势不足，不能认定为峰值月。'
         : 'Google Trends 数据缺失或无法解析，Google 峰值月暂不参与判断。';
   const googlePeaks = googlePeakMonths.map(normalizeMonth).join('、') || '无稳定峰值月';
   const oalurPeaks = (s.oalurPeakMonths || []).map(normalizeMonth).join('、') || '无';
@@ -2712,8 +2755,21 @@ if (seasonalityData && seasonalityData.seasonality) {
     if (overlap.length < Math.min(gtSet.size, oalurSet.size)) return '峰值月份部分一致，Oalur 站内峰值可能滞后或更集中';
     return '峰值月份一致';
   })();
-  const seasonAdvice = sType === '强季节性'
+  const levelText = (level) => level === 'strong' ? '强信号' : level === 'weak' ? '弱信号' : '无明显信号';
+  const evidence = s.seasonalityEvidence || {};
+  const seasonalityEvidenceText = [
+    `Google：${levelText(evidence.google)}`,
+    `Oalur：${levelText(evidence.oalur)}`,
+    `老品ASIN：${levelText(evidence.asin)}`
+  ].join('；');
+  const oalurEvidenceText = s.oalurSeasonality?.reason || '未形成 Oalur 站内季节性证据';
+  const asinEvidenceText = s.asinSeasonality?.productCount
+    ? `${s.asinSeasonality.reason}；样本 ${s.asinSeasonality.productCount} 个老品 ASIN`
+    : '老品 ASIN 样本不足或未采集';
+  const seasonAdvice = sType.includes('确认强')
     ? '该品类旺季集中，需提前 2-3 个月完成采购和入仓，淡季库存与现金流风险较高。'
+    : sType.includes('疑似强')
+      ? '站内或局部数据存在强季节性信号，但证据不足两类，需要复核年度峰值稳定性和老品销量趋势后再按强季节性备货。'
     : '季节性压力相对较低，但仍需结合站内搜索量、BSR 和广告成本验证全年稳定性。';
 
   replacements['{{SEASONALITY_SUMMARY}}'] = `<span style="color:${sColor};font-weight:700">${sType}</span>`;
@@ -2731,7 +2787,10 @@ if (seasonalityData && seasonalityData.seasonality) {
   </div>
   <div style="padding:10px 14px;background:#f0f5ff;border-radius:8px;font-size:13px;line-height:1.8;margin-bottom:16px;">
     <strong>数据一致性：</strong>${dataConsistency}<br>
+    <strong>三源证据：</strong>${seasonalityEvidenceText}<br>
     <strong>Google 判断口径：</strong>${googlePeakNote}<br>
+    <strong>Oalur 判断依据：</strong>${escapeHtml(oalurEvidenceText)}<br>
+    <strong>老品 ASIN 验证：</strong>${escapeHtml(asinEvidenceText)}<br>
     <strong>搜索量趋势：</strong>${searchDemandTrend.text}<br>
     <strong>知识库解读：</strong>${seasonAdvice} 判断季节性必须用 Google Trends、站内搜索量、BSR/销量趋势交叉验证，不能只看单一工具。<br>
     <strong>TOP3 最近6月：</strong>点击份额 ${avgClick == null ? '未采集' : avgClick.toFixed(1) + '%'}；转化份额 ${avgConvert == null ? '未采集' : avgConvert.toFixed(1) + '%'}。
@@ -2913,7 +2972,7 @@ const avgPriceNumForAudit = parseFloat(String(avgPrice).replace('$', '')) || 0;
 const lowPriceRisk = priceNums.length > 0 && priceNums.filter(p => p < 10).length / priceNums.length > 0.5;
 const top20AvgReviewNumForAudit = numFromDisplay(top20AvgReviews) ?? 0;
 const reviewBarrierHigh = top20AvgReviewNumForAudit >= 600 || reviewMedian >= 350 || top20LowReviewCount < 3;
-const strongSeasonal = seasonalityData?.seasonality?.seasonalityType === '强季节性';
+const strongSeasonal = String(seasonalityData?.seasonality?.seasonalityType || '').includes('确认强');
 const oalurPeakMonths = seasonalityData?.seasonality?.oalurPeakMonths || [];
 const top3ClickTrend = seasonalityData?.oalurVolumeData?.topClickRatioTrend || null;
 const top3ConvertTrend = seasonalityData?.oalurVolumeData?.topConvertRatioTrend || null;
@@ -3072,6 +3131,9 @@ function asinRevenueSeasonalityRatio(dataObj) {
 
 function normalizeSeasonalityLabel(value, score) {
   const text = String(value || '');
+  if (text.includes('确认') && text.includes('强')) return '确认强季节性';
+  if (text.includes('疑似') && text.includes('强')) return '疑似强季节性';
+  if (text.includes('疑似') && text.includes('弱')) return '疑似弱季节性';
   if (text.includes('强') || text.includes('寮哄') || Number(score) >= 60) return '强季节性';
   if (text.includes('弱') || text.includes('寮卞') || Number(score) >= 30) return '弱季节性';
   if (!text || text === 'undefined') return '未分析';
@@ -3084,6 +3146,25 @@ function seasonalityRiskEvidence(dataObj) {
   }
   const s = dataObj.seasonality;
   const label = normalizeSeasonalityLabel(s.seasonalityType, s.seasonalityScore);
+  if (s.seasonalityEvidence && typeof s.seasonalityEvidence === 'object') {
+    const evidence = s.seasonalityEvidence;
+    const notes = evidence.notes || {};
+    const text = [
+      `Google=${evidence.google || 'none'}（${notes.google || '无说明'}）`,
+      `Oalur=${evidence.oalur || 'none'}（${notes.oalur || '无说明'}）`,
+      `老品ASIN=${evidence.asin || 'none'}（${notes.asin || '无说明'}）`
+    ].join('；');
+    if (label === '确认强季节性') {
+      return { level: '明确强季节性', score: 0, confirmed: true, suspected: false, text: `${text}。至少两类强信号成立，作为最终评分扣分项。` };
+    }
+    if (label === '疑似强季节性') {
+      return { level: '疑似季节性', score: 2, confirmed: false, suspected: true, text: `${text}。只有一类强信号或证据不足两类，不作为一票否决。` };
+    }
+    if (label === '弱季节性' || label === '疑似弱季节性') {
+      return { level: label, score: 4, confirmed: false, suspected: false, text: `${text}。有一定季节波动，但未达到强季节性验证条件。` };
+    }
+    return { level: '非强季节性', score: 5, confirmed: false, suspected: false, text: `${text}。未发现强季节性多源证据。` };
+  }
   const gtRatio = googleSeasonalityRatio(dataObj);
   const oalurRatio = oalurSeasonalityRatio(dataObj);
   const asinRatio = asinRevenueSeasonalityRatio(dataObj);

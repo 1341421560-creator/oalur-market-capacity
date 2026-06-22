@@ -1,0 +1,36 @@
+{
+  "keyword": "banana hanger",
+  "data": [
+    {
+      "asin": "B000000001",
+      "title": "Banana hanger stand",
+      "category": "Home & Kitchen > Kitchen Storage > Banana Hangers",
+      "price": "$12.99",
+      "bsr": 200,
+      "sales": "60",
+      "revenue": "$779",
+      "ratings": "25"
+    },
+    {
+      "asin": "B000000002",
+      "title": "Counter banana hanger",
+      "category": "Home & Kitchen > Kitchen Storage > Banana Hangers",
+      "price": "$14.99",
+      "bsr": 220,
+      "sales": "55",
+      "revenue": "$824",
+      "ratings": "20"
+    },
+    {
+      "asin": "B000000003",
+      "title": "Metal banana hanger",
+      "category": "Home & Kitchen > Kitchen Storage > Banana Hangers",
+      "price": "$15.99",
+      "bsr": 230,
+      "sales": "50",
+      "revenue": "$799",
+      "ratings": "18"
+    }
+  ],
+  "excluded": []
+}

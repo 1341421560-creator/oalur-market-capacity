@@ -9,6 +9,7 @@
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
+const { activatePage } = require('./browser-page-utils');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -41,6 +42,7 @@ function parseChineseDate(text) {
 
 async function extract(browser, kw) {
   const page = await browser.newPage();
+  await activatePage(page);
   const url = `https://trends.google.com/trends/explore?geo=US&q=${encodeURIComponent(kw)}`;
 
   console.log(`🌐 导航至 Google Trends...`);

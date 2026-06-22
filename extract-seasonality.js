@@ -8,7 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -66,6 +66,203 @@ if (!rawKeyword || !keyword) {
 const gtrendsFile = path.join(dirs.data, safeName + '-google-trends.json');
 const oalurVolFile = path.join(dirs.data, safeName + '-oalur-volume.json');
 const asinTrendsFile = path.join(dirs.data, safeName + '-asin-trends.json');
+
+function googleTrendsQuality(data) {
+  const points = data?.data5Years || data?.data || [];
+  if (!Array.isArray(points) || points.length === 0) {
+    return { ok: false, reason: 'missing Google Trends timeline data', points: 0, nonzero: 0, nonzeroRate: 0 };
+  }
+  const values = points.map(p => Number(p.value)).filter(Number.isFinite);
+  const nonzero = values.filter(v => v > 0).length;
+  const nonzeroRate = values.length ? nonzero / values.length : 0;
+  const max = values.length ? Math.max(...values) : 0;
+  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  const sparse = values.length >= 52 && (nonzero < 24 || nonzeroRate < 0.15);
+  if (sparse) {
+    return {
+      ok: false,
+      reason: `Google Trends data is too sparse: ${nonzero}/${values.length} nonzero points (${Math.round(nonzeroRate * 100)}%)`,
+      points: values.length,
+      nonzero,
+      nonzeroRate,
+      max,
+      avg
+    };
+  }
+  return { ok: true, reason: '', points: values.length, nonzero, nonzeroRate, max, avg };
+}
+
+function googleTrendsFallbackKeyword(value) {
+  // Local-agent fallback: use a broader core term when the full long-tail query is too sparse for Google Trends.
+  const cleaned = String(value || '').trim().replace(/\s+/g, ' ');
+  const beforeFor = cleaned.split(/\s+for\s+/i)[0]?.trim();
+  if (beforeFor && beforeFor.split(/\s+/).length >= 2 && beforeFor.toLowerCase() !== cleaned.toLowerCase()) {
+    return beforeFor;
+  }
+  return cleaned;
+}
+
+function runGoogleTrendsExtraction(queryKeyword, outputFile) {
+  execFileSync(
+    'node',
+    [path.join(SKILL_DIR, 'extract-google-trends.js'), queryKeyword, outputFile],
+    { stdio: 'inherit', timeout: 90000 }
+  );
+  return fs.existsSync(outputFile) ? JSON.parse(fs.readFileSync(outputFile, 'utf-8')) : null;
+}
+
+function annotateGoogleTrendsData(data, requestedKeyword, queryKeyword, quality, fallbackReason = '') {
+  if (!data) return data;
+  data.requestedKeyword = requestedKeyword;
+  data.queryKeyword = queryKeyword;
+  data.quality = quality || googleTrendsQuality(data);
+  if (fallbackReason) data.keywordFallbackReason = fallbackReason;
+  return data;
+}
+
+const SEASONALITY_MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+
+function median(values) {
+  const arr = values.filter(v => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  if (!arr.length) return 0;
+  return arr[Math.floor(arr.length / 2)];
+}
+
+function circularMonthDistance(a, b) {
+  const x = Number(a);
+  const y = Number(b);
+  if (!x || !y) return 12;
+  const diff = Math.abs(x - y);
+  return Math.min(diff, 12 - diff);
+}
+
+function isNearPeakMonth(month, peakMonths) {
+  return peakMonths.some(peak => circularMonthDistance(month, peak) <= 1);
+}
+
+function analyzeMonthlySeasonality(entries, options = {}) {
+  const limit = options.limit || 36;
+  const sorted = entries
+    .filter(item => item.month && Number.isFinite(Number(item.value)))
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .slice(-limit);
+  if (!sorted.length) {
+    return {
+      level: 'none',
+      score: 0,
+      peakMonths: [],
+      monthAvgs: SEASONALITY_MONTHS.map(() => 0),
+      reason: 'no monthly data'
+    };
+  }
+
+  const monthBuckets = {};
+  const yearBuckets = {};
+  for (const item of sorted) {
+    const year = item.month.slice(0, 4);
+    const month = item.month.slice(5, 7);
+    if (!monthBuckets[month]) monthBuckets[month] = [];
+    monthBuckets[month].push(Number(item.value) || 0);
+    if (!yearBuckets[year]) yearBuckets[year] = [];
+    yearBuckets[year].push({ month, value: Number(item.value) || 0 });
+  }
+
+  const monthAvgs = SEASONALITY_MONTHS.map(month => {
+    const arr = monthBuckets[month] || [];
+    return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  });
+  const positive = monthAvgs.filter(v => v > 0);
+  const maxAvg = positive.length ? Math.max(...positive) : 0;
+  const minAvg = positive.length ? Math.min(...positive) : 0;
+  const medianAvg = median(monthAvgs);
+  const peakAvgRatio = minAvg > 0 ? maxAvg / minAvg : maxAvg;
+  const maxMedianRatio = medianAvg > 0 ? maxAvg / medianAvg : maxAvg;
+  const totalAvg = monthAvgs.reduce((a, b) => a + b, 0);
+  const top2Share = totalAvg > 0
+    ? [...monthAvgs].sort((a, b) => b - a).slice(0, 2).reduce((a, b) => a + b, 0) / totalAvg
+    : 0;
+  const peakMonths = maxAvg > 0
+    ? SEASONALITY_MONTHS
+        .filter((month, index) => monthAvgs[index] >= Math.max(maxAvg * 0.85, medianAvg * 1.25))
+        .map(month => Number(month))
+    : [];
+
+  const validYears = Object.entries(yearBuckets)
+    .filter(([, rows]) => rows.length >= 8)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-3)
+    .map(([year, rows]) => {
+      const peak = [...rows].sort((a, b) => b.value - a.value)[0];
+      return { year, peakMonth: Number(peak.month), peakValue: peak.value, count: rows.length };
+    });
+  const stableYearCount = peakMonths.length
+    ? validYears.filter(item => isNearPeakMonth(item.peakMonth, peakMonths)).length
+    : 0;
+
+  const recentRows = sorted.slice(-12);
+  const recentPeak = recentRows.length ? [...recentRows].sort((a, b) => b.value - a.value)[0] : null;
+  const recentValues = recentRows.map(item => Number(item.value) || 0);
+  const recentMedian = median(recentValues);
+  const recentPeakRatio = recentPeak && recentMedian > 0 ? Number(recentPeak.value) / recentMedian : 0;
+  const recentStillPeak = recentPeak && peakMonths.length
+    ? isNearPeakMonth(Number(recentPeak.month.slice(5, 7)), peakMonths) && recentPeakRatio >= 1.25
+    : false;
+
+  const strong = peakAvgRatio >= 2.5 &&
+    maxMedianRatio >= 1.5 &&
+    top2Share >= 0.24 &&
+    stableYearCount >= 2 &&
+    recentStillPeak;
+  const weak = !strong && peakAvgRatio >= 1.8 &&
+    maxMedianRatio >= 1.25 &&
+    (stableYearCount >= 2 || recentStillPeak || top2Share >= 0.22);
+  const level = strong ? 'strong' : weak ? 'weak' : 'none';
+  const score = strong ? 60 : weak ? 40 : 0;
+  const reason = [
+    `月均峰谷比 ${peakAvgRatio.toFixed(2)}`,
+    `峰值/中位月 ${maxMedianRatio.toFixed(2)}`,
+    `Top2月占比 ${(top2Share * 100).toFixed(1)}%`,
+    `近3个完整/近完整年份峰值命中 ${stableYearCount}/${validYears.length}`,
+    recentPeak ? `最近12月峰值 ${recentPeak.month}，相对中位 ${recentPeakRatio.toFixed(2)}x` : '最近12月数据不足'
+  ].join('；');
+
+  return {
+    level,
+    score,
+    peakMonths,
+    monthAvgs: monthAvgs.map(v => Math.round(v)),
+    peakAvgRatio,
+    maxMedianRatio,
+    top2Share,
+    stableYearCount,
+    validYearCount: validYears.length,
+    yearPeaks: validYears,
+    recentPeakMonth: recentPeak?.month || '',
+    recentPeakRatio,
+    recentStillPeak: Boolean(recentStillPeak),
+    reason
+  };
+}
+
+function analyzeAsinSalesSeasonality(asinTrends) {
+  const products = asinTrends?.products || [];
+  const totals = {};
+  for (const product of products) {
+    const months = product.trendData?.months || [];
+    const sales = product.trendData?.monthlySales || [];
+    months.forEach((month, index) => {
+      totals[month] = (totals[month] || 0) + (Number(sales[index]) || 0);
+    });
+  }
+  const evidence = analyzeMonthlySeasonality(
+    Object.entries(totals).map(([month, value]) => ({ month, value })),
+    { limit: 36 }
+  );
+  return {
+    ...evidence,
+    productCount: products.filter(product => product.trendData?.months?.length).length
+  };
+}
 
 // ============================================
 // 上架时间解析工具
@@ -189,45 +386,53 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   // ─── Google Trends 分析 ───
   if (gtData && (gtData.data5Years || gtData.data) && (gtData.data5Years || gtData.data).length > 0) {
     const points = gtData.data5Years || gtData.data;
-    const values = points.map(p => p.value);
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    const peakValleyRatio = min > 0 ? max / min : max;
+    const quality = googleTrendsQuality(gtData);
 
-    // 按月分组求多年均值
-    const monthByYear = {};
+    // Group weekly Google Trends points by calendar month, then judge seasonality by month averages.
+    const monthBuckets = {};
     points.forEach(p => {
       if (p.date && p.date.length >= 7) {
-        const year = p.date.substring(0, 4);
         const month = p.date.substring(5, 7);
-        if (!monthByYear[year]) monthByYear[year] = {};
-        monthByYear[year][month] = p.value;
+        if (!monthBuckets[month]) monthBuckets[month] = [];
+        monthBuckets[month].push(Number(p.value) || 0);
       }
     });
 
     const months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
     const monthAvgs = {};
     months.forEach(m => {
-      let sum = 0, count = 0;
-      Object.values(monthByYear).forEach(yd => {
-        if (yd[m] !== undefined) { sum += yd[m]; count++; }
-      });
-      monthAvgs[m] = count > 0 ? sum / count : 0;
+      const arr = monthBuckets[m] || [];
+      monthAvgs[m] = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
     });
 
     const avgValues = months.map(m => monthAvgs[m] || 0);
     const maxMonthVal = Math.max(...avgValues);
-    result.googlePeakMonths = months.filter((m, i) => avgValues[i] >= maxMonthVal * 0.85);
+    const nonZeroMonthVals = avgValues.filter(v => v > 0);
+    const minMonthVal = nonZeroMonthVals.length ? Math.min(...nonZeroMonthVals) : 0;
+    const peakValleyRatio = minMonthVal > 0 ? maxMonthVal / minMonthVal : maxMonthVal;
+    const medianMonthVal = nonZeroMonthVals.length
+      ? [...nonZeroMonthVals].sort((a, b) => a - b)[Math.floor(nonZeroMonthVals.length / 2)]
+      : 0;
+    const displayPeakThreshold = Math.max(maxMonthVal * 0.84, medianMonthVal * 1.08);
+    result.googlePeakMonths = peakValleyRatio >= 1.25
+      ? months.filter((m, i) => {
+          const prev = avgValues[(i + 11) % 12];
+          const next = avgValues[(i + 1) % 12];
+          return avgValues[i] >= displayPeakThreshold && avgValues[i] >= prev && avgValues[i] >= next;
+        })
+      : [];
     result.googleMonthAvgs = months.map(m => Math.round(monthAvgs[m] || 0));
 
-    if (peakValleyRatio >= 2.0) {
-      result.googleTrendsShape = '明显的季节性峰谷 (峰谷比≥2)';
+    if (!quality.ok) {
+      result.googleTrendsShape = `Google Trends 数据过稀疏，不参与季节性判断（${quality.reason}）`;
+    } else if (peakValleyRatio >= 2.0 && result.googlePeakMonths.length > 0) {
+      result.googleTrendsShape = `明显的季节性峰谷（月均峰谷比=${peakValleyRatio.toFixed(1)}）`;
       result.seasonalityScore += 50;
-    } else if (peakValleyRatio >= 1.5) {
-      result.googleTrendsShape = '温和的季节性波动 (峰谷比1.5-2)';
+    } else if (peakValleyRatio >= 1.5 && result.googlePeakMonths.length > 0) {
+      result.googleTrendsShape = `温和的季节性波动（月均峰谷比=${peakValleyRatio.toFixed(1)}）`;
       result.seasonalityScore += 30;
     } else {
-      result.googleTrendsShape = `无明显季节性 (峰谷比=${peakValleyRatio.toFixed(1)})`;
+      result.googleTrendsShape = `无明显季节性（月均峰谷比=${peakValleyRatio.toFixed(1)}）`;
     }
 
     console.log(`\n📈 Google Trends 分析:`);
@@ -238,55 +443,68 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   }
 
   // ─── Oalur 搜索量分析 ───
+  let oalurSeasonality = { level: 'none', score: 0, peakMonths: [], reason: 'no Oalur monthly search data' };
   if (oalurVolData && oalurVolData.searchesTrend) {
     const allMonths = Object.keys(oalurVolData.searchesTrend).sort();
     const recentMonths = allMonths.slice(-36);
-    const searchesTrend = {};
-    recentMonths.forEach(m => { searchesTrend[m] = oalurVolData.searchesTrend[m]; });
+    const trendEntries = recentMonths.map(month => ({ month, value: Number(oalurVolData.searchesTrend[month]) || 0 }));
+    oalurSeasonality = analyzeMonthlySeasonality(trendEntries, { limit: 36 });
 
-    const months = Object.keys(searchesTrend).sort();
-    const volumes = months.map(m => searchesTrend[m]);
+    result.oalurPeakMonths = oalurSeasonality.peakMonths.map(month => month + '月');
+    result.oalurMonthAvgs = oalurSeasonality.monthAvgs;
+    result.oalurSeasonality = oalurSeasonality;
+    result.seasonalityScore = Math.max(result.seasonalityScore, oalurSeasonality.score);
 
-    if (volumes.length > 0) {
-      const monthAvg = {};
-      months.forEach(m => {
-        const mn = m.substring(5, 7);
-        if (!monthAvg[mn]) monthAvg[mn] = [];
-        monthAvg[mn].push(searchesTrend[m]);
-      });
-
-      const monthAvgsObj = {};
-      Object.keys(monthAvg).forEach(m => {
-        monthAvgsObj[m] = monthAvg[m].reduce((a, b) => a + b, 0) / monthAvg[m].length;
-      });
-
-      const avgValues = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
-        .map(m => monthAvgsObj[m] || 0);
-      const maxAvg = Math.max(...avgValues);
-      const minNonZero = Math.min(...avgValues.filter(v => v > 0));
-      const peakAvgRatio = minNonZero > 0 ? maxAvg / minNonZero : maxAvg;
-
-      result.oalurPeakMonths = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
-        .filter((m, i) => avgValues[i] >= maxAvg * 0.8)
-        .map(m => parseInt(m) + '月');
-      result.oalurMonthAvgs = avgValues.map(v => Math.round(v));
-
-      if (peakAvgRatio >= 2.5) {
-        result.seasonalityScore = Math.max(result.seasonalityScore, 60);
-      } else if (peakAvgRatio >= 1.8) {
-        result.seasonalityScore = Math.max(result.seasonalityScore, 40);
-      }
-
-      console.log(`\n📊 Oalur 搜索量分析 (${months.length} 个月):`);
-      console.log(`  多年月均峰谷比: ${peakAvgRatio.toFixed(1)}`);
-      console.log(`  旺季月份: ${result.oalurPeakMonths.join('、')}`);
-    }
+    console.log(`\n📊 Oalur 搜索量分析 (${recentMonths.length} 个月):`);
+    console.log(`  证据等级: ${oalurSeasonality.level}`);
+    console.log(`  ${oalurSeasonality.reason}`);
+    console.log(`  旺季月份: ${result.oalurPeakMonths.join('、') || '无'}`);
   }
 
   // ─── 最终判定 ───
-  if (result.seasonalityScore >= 60) result.seasonalityType = '强季节性';
-  else if (result.seasonalityScore >= 30) result.seasonalityType = '弱季节性';
-  else result.seasonalityType = '非季节性';
+  const asinSeasonality = analyzeAsinSalesSeasonality(asinTrends);
+  result.asinSeasonality = asinSeasonality;
+
+  const googleIsNotSeasonal = /无明显|过稀疏/.test(result.googleTrendsShape);
+  const googleLevel = !googleIsNotSeasonal && result.googlePeakMonths.length > 0 && /明显/.test(result.googleTrendsShape)
+    ? 'strong'
+    : !googleIsNotSeasonal && result.googlePeakMonths.length > 0 && /温和/.test(result.googleTrendsShape)
+      ? 'weak'
+      : 'none';
+  const oalurLevel = result.oalurSeasonality?.level || 'none';
+  const asinLevel = asinSeasonality.productCount >= 3 ? asinSeasonality.level : 'none';
+  const strongSignals = [googleLevel, oalurLevel, asinLevel].filter(level => level === 'strong').length;
+  const weakOrStrongSignals = [googleLevel, oalurLevel, asinLevel].filter(level => level === 'strong' || level === 'weak').length;
+
+  result.seasonalityEvidence = {
+    google: googleLevel,
+    oalur: oalurLevel,
+    asin: asinLevel,
+    strongCount: strongSignals,
+    signalCount: weakOrStrongSignals,
+    notes: {
+      google: result.googleTrendsShape || 'no Google Trends evidence',
+      oalur: result.oalurSeasonality?.reason || 'no Oalur evidence',
+      asin: asinSeasonality.productCount >= 3 ? asinSeasonality.reason : 'old ASIN sample is insufficient'
+    }
+  };
+
+  if (strongSignals >= 2) {
+    result.seasonalityType = '确认强季节性';
+    result.seasonalityScore = 60;
+  } else if (strongSignals === 1) {
+    result.seasonalityType = '疑似强季节性';
+    result.seasonalityScore = Math.max(45, Math.min(result.seasonalityScore, 45));
+  } else if (weakOrStrongSignals >= 2) {
+    result.seasonalityType = '弱季节性';
+    result.seasonalityScore = 35;
+  } else if (weakOrStrongSignals === 1) {
+    result.seasonalityType = '疑似弱季节性';
+    result.seasonalityScore = 25;
+  } else {
+    result.seasonalityType = '非季节性';
+    result.seasonalityScore = 0;
+  }
 
   // ─── Google vs Oalur 偏差 ───
   if (gtData && result.googlePeakMonths.length > 0 && result.oalurPeakMonths.length > 0) {
@@ -322,13 +540,7 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   } else {
     console.log(`\n🌐 Step 1/3: 提取 Google Trends 数据...`);
     try {
-      execSync(
-        `node "${path.join(SKILL_DIR, 'extract-google-trends.js')}" "${keyword}" "${gtrendsFile}"`,
-        { stdio: 'inherit', timeout: 90000 }
-      );
-      if (fs.existsSync(gtrendsFile)) {
-        gtData = JSON.parse(fs.readFileSync(gtrendsFile, 'utf-8'));
-      }
+      gtData = runGoogleTrendsExtraction(keyword, gtrendsFile);
     } catch (e) {
       console.log(`⚠️ Google Trends 提取失败: ${e.message}`);
     }
@@ -346,16 +558,43 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
     const previousError = gtData.error || 'missing data5Years';
     console.log(`Google Trends cache invalid, retrying: ${previousError}`);
     try {
-      execSync(
-        `node "${path.join(SKILL_DIR, 'extract-google-trends.js')}" "${keyword}" "${gtrendsFile}"`,
-        { stdio: 'inherit', timeout: 90000 }
-      );
-      if (fs.existsSync(gtrendsFile)) {
-        gtData = JSON.parse(fs.readFileSync(gtrendsFile, 'utf-8'));
-      }
+      gtData = runGoogleTrendsExtraction(keyword, gtrendsFile);
     } catch (e) {
       console.log(`Google Trends retry failed: ${e.message}`);
       gtData = { keyword, error: e.message, previousError, extractedAt: new Date().toISOString() };
+      fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
+    }
+  }
+
+  if (gtData && !gtData.error) {
+    let quality = googleTrendsQuality(gtData);
+    const fallbackKeyword = googleTrendsFallbackKeyword(keyword);
+    if (!quality.ok && fallbackKeyword && fallbackKeyword.toLowerCase() !== keyword.toLowerCase()) {
+      const fallbackReason = quality.reason;
+      console.log(`Google Trends data sparse for "${keyword}", retrying with core term "${fallbackKeyword}": ${fallbackReason}`);
+      try {
+        gtData = runGoogleTrendsExtraction(fallbackKeyword, gtrendsFile);
+        quality = googleTrendsQuality(gtData);
+        gtData = annotateGoogleTrendsData(gtData, keyword, fallbackKeyword, quality, fallbackReason);
+        fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
+      } catch (e) {
+        console.log(`Google Trends fallback retry failed: ${e.message}`);
+        gtData = {
+          keyword,
+          requestedKeyword: keyword,
+          queryKeyword: fallbackKeyword,
+          error: `Google Trends fallback failed: ${e.message}`,
+          previousError: fallbackReason,
+          extractedAt: new Date().toISOString()
+        };
+        fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
+      }
+    } else {
+      gtData = annotateGoogleTrendsData(gtData, keyword, gtData.queryKeyword || gtData.keyword || keyword, quality);
+      fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
+    }
+    if (gtData?.quality && !gtData.quality.ok) {
+      gtData.error = gtData.quality.reason;
       fs.writeFileSync(gtrendsFile, JSON.stringify(gtData, null, 2), 'utf-8');
     }
   }
@@ -384,37 +623,49 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   const pickedAsins = []; // 记录选中的 ASIN
 
   if (bsrDataFile && fs.existsSync(bsrDataFile)) {
-    if (fs.existsSync(asinTrendsFile)) {
-      console.log(`\n📁 Step 3/3: 读取已有 ASIN 趋势缓存`);
-      asinTrends = JSON.parse(fs.readFileSync(asinTrendsFile, 'utf-8'));
-    } else {
-      const bsrData = JSON.parse(fs.readFileSync(bsrDataFile, 'utf-8'));
-      const oldAsins = pickOldAsins(bsrData);
+    const bsrData = JSON.parse(fs.readFileSync(bsrDataFile, 'utf-8'));
+    const oldAsins = pickOldAsins(bsrData);
 
-      if (oldAsins.length > 0) {
-        oldAsins.forEach(a => pickedAsins.push({ asin: a.asin, bsr: a.bsr, brand: a.brand, title: a.title?.substring(0, 60), listingAge: a.listingAge }));
-        const asinList = oldAsins.map(a => a.asin).join(',');
+    if (oldAsins.length > 0) {
+      oldAsins.forEach(a => pickedAsins.push({ asin: a.asin, bsr: a.bsr, brand: a.brand, title: a.title?.substring(0, 60), listingAge: a.listingAge }));
+      const expectedAsins = oldAsins.map(a => a.asin);
+      const expectedSet = new Set(expectedAsins);
+      let cacheUsable = false;
 
-        console.log(`\n📈 Step 3/3: 提取 ASIN 趋势 (${oldAsins.length} 个, 上架>3年)`);
+      if (fs.existsSync(asinTrendsFile)) {
+        console.log('\nStep 3/3: reading existing ASIN trend cache');
+        asinTrends = JSON.parse(fs.readFileSync(asinTrendsFile, 'utf-8'));
+        const cachedAsins = (asinTrends.products || []).map(product => product.asin).filter(Boolean);
+        cacheUsable = cachedAsins.length === expectedAsins.length && cachedAsins.every(asin => expectedSet.has(asin));
+        if (!cacheUsable) {
+          console.log('ASIN trend cache does not match current selected ASINs; re-extracting.');
+          asinTrends = null;
+        }
+      }
+
+      if (!cacheUsable) {
+        const asinList = expectedAsins.join(',');
+        console.log(`\nStep 3/3: extracting ASIN trends (${oldAsins.length} ASIN, listed >3 years)`);
         console.log(`  ASINs: ${oldAsins.map(a => `${a.asin}(BSR#${a.bsr})`).join(', ')}`);
 
         try {
-          execSync(
-            `node "${path.join(SKILL_DIR, 'extract-asin-trends.js')}" "${asinList}" "${asinTrendsFile}"`,
+          execFileSync(
+            'node',
+            [path.join(SKILL_DIR, 'extract-asin-trends.js'), asinList, asinTrendsFile],
             { stdio: 'inherit', timeout: 240000 }
           );
           if (fs.existsSync(asinTrendsFile)) {
             asinTrends = JSON.parse(fs.readFileSync(asinTrendsFile, 'utf-8'));
           }
         } catch (e) {
-          console.log(`⚠️ ASIN 趋势提取失败: ${e.message}`);
+          console.log(`ASIN trend extraction failed: ${e.message}`);
         }
-      } else {
-        console.log(`\n⚠️ Step 3/3: BSR 数据中未找到上架>3年的 ASIN，跳过`);
       }
+    } else {
+      console.log('\nStep 3/3: no ASIN listed >3 years found in BSR data; skipped');
     }
   } else {
-    console.log(`\n⚠️ Step 3/3: BSR 数据文件不存在，跳过 ASIN 趋势提取`);
+    console.log('\nStep 3/3: BSR data file does not exist; skipped ASIN trend extraction');
   }
 
   // ─── Step 4: 分析 ───

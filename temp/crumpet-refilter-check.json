@@ -1,0 +1,3919 @@
+{
+  "keywords": [
+    "crumpet rings"
+  ],
+  "keyword": "crumpet rings",
+  "bsrRange": "1-20000",
+  "timeFilter": "近30天",
+  "historicalNewOnly": false,
+  "survivalBaseline": null,
+  "historicalNewOnlyRule": null,
+  "rawTotal": 25,
+  "total": 25,
+  "allCount": 25,
+  "filteredCount": 10,
+  "excludedCount": 15,
+  "targetMatchedCount": 10,
+  "salesFloorExcludedCount": 0,
+  "targetCategory": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+  "targetCategories": [
+    "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+  ],
+  "equivalentCandidateCategories": [],
+  "referenceCategories": [
+    "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+    "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+    "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+    "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+  ],
+  "referenceCategorySelection": {
+    "mode": "weighted",
+    "scope": "initial-category-selection-only",
+    "matchedCount": 2,
+    "unmatchedCount": 2,
+    "matchedCategories": [
+      {
+        "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+        "referenceCategory": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+        "matchType": "exact",
+        "scoreBoost": 130
+      },
+      {
+        "category": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+        "referenceCategory": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+        "matchType": "exact",
+        "scoreBoost": 130
+      }
+    ],
+    "unmatchedCategories": [
+      "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+      "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings"
+    ]
+  },
+  "rescuePriceGuard": {
+    "enabled": false,
+    "reason": "target price sample too small",
+    "targetSampleSize": 10
+  },
+  "categorySelection": [
+    {
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "count": 13,
+      "score": 245.6,
+      "baseScore": 115.6,
+      "selected": true,
+      "selectedKeyword": "crumpet rings",
+      "reason": "leaf matches product form; category titles strongly match keyword (85%); functional equivalent category candidate; requires ASIN title match; reference category exact match",
+      "tokenHits": [
+        "ring"
+      ],
+      "shapeHit": true,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": true,
+      "titleIntentRescueCandidate": true,
+      "titleAllRate": 0.846,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": true,
+      "referenceScoreBoost": 130,
+      "referenceCategoryMatchedBy": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "referenceCategoryMatchType": "exact",
+      "referenceCategoryMatchReason": "reference category exact match"
+    },
+    {
+      "category": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "count": 1,
+      "score": 164.8,
+      "baseScore": 34.8,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "leaf matches product form; reference category exact match",
+      "tokenHits": [
+        "ring"
+      ],
+      "shapeHit": true,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": true,
+      "referenceScoreBoost": 130,
+      "referenceCategoryMatchedBy": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "referenceCategoryMatchType": "exact",
+      "referenceCategoryMatchReason": "reference category exact match"
+    },
+    {
+      "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      "count": 3,
+      "score": -27.5,
+      "baseScore": -27.5,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0.333,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+      "count": 2,
+      "score": -43.6,
+      "baseScore": -43.6,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      "count": 1,
+      "score": -45.2,
+      "baseScore": -45.2,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+      "count": 1,
+      "score": -45.2,
+      "baseScore": -45.2,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+      "count": 1,
+      "score": -45.2,
+      "baseScore": -45.2,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Tool & Gadget Sets",
+      "count": 1,
+      "score": -45.2,
+      "baseScore": -45.2,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Kitchen & Dining > Cookware > Griddles",
+      "count": 1,
+      "score": -45.2,
+      "baseScore": -45.2,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 1,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+      "count": 5,
+      "score": -50.4,
+      "baseScore": -50.4,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 0.2,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    },
+    {
+      "category": "Kitchen & Dining > Bakeware > Candy Making Supplies > Chocolate Molds",
+      "count": 1,
+      "score": -57.2,
+      "baseScore": -57.2,
+      "selected": false,
+      "selectedKeyword": "crumpet rings",
+      "reason": "low keyword relevance",
+      "tokenHits": [],
+      "shapeHit": false,
+      "modifierHits": 0,
+      "contextMatch": false,
+      "contextHits": 0,
+      "contextTokenCount": 1,
+      "contextScore": 0,
+      "contextTokens": [
+        "crumpet"
+      ],
+      "contextMatchedTokens": [],
+      "competingContextTokens": [
+        "kitchen",
+        "chocolate",
+        "candy"
+      ],
+      "functionalEquivalent": false,
+      "titleIntentRescueCandidate": false,
+      "titleAllRate": 0,
+      "titleAnyRate": 0,
+      "referenceCategoryMatch": false,
+      "referenceScoreBoost": 0,
+      "referenceCategoryMatchedBy": "",
+      "referenceCategoryMatchType": "",
+      "referenceCategoryMatchReason": ""
+    }
+  ],
+  "categoryDistribution": [
+    [
+      "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      13
+    ],
+    [
+      "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+      5
+    ],
+    [
+      "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      3
+    ],
+    [
+      "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+      2
+    ],
+    [
+      "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      1
+    ],
+    [
+      "Kitchen & Dining > Bakeware > Candy Making Supplies > Chocolate Molds",
+      1
+    ],
+    [
+      "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+      1
+    ],
+    [
+      "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+      1
+    ],
+    [
+      "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      1
+    ],
+    [
+      "Kitchen & Dining > Kitchen Utensils & Gadgets > Tool & Gadget Sets",
+      1
+    ],
+    [
+      "Kitchen & Dining > Cookware > Griddles",
+      1
+    ]
+  ],
+  "keywordStats": {
+    "crumpet rings": 30
+  },
+  "ratingsSupplementSummary": {
+    "checked": 0,
+    "supplemented": 0,
+    "failed": 0
+  },
+  "categorySupplementSummary": {
+    "checked": 6,
+    "supplemented": 6,
+    "failed": 0,
+    "items": [
+      {
+        "asin": "B0D6V8J4KP",
+        "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+        "categories": [
+          "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+          "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "Kitchen & Dining > Cookware > Cookware Accessories",
+          "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+        ],
+        "listingDate": "2024-06-12",
+        "source": "products-information",
+        "bsrTrend": {
+          "categoryId": "kitchen",
+          "categoryName": "Kitchen & Dining",
+          "pointCount": 628,
+          "latestDate": "2026-06-20",
+          "latestBsr": 4210,
+          "recentPoints": [
+            {
+              "date": "2026-05-22",
+              "bsr": 2993
+            },
+            {
+              "date": "2026-05-23",
+              "bsr": 3116
+            },
+            {
+              "date": "2026-05-24",
+              "bsr": 3222
+            },
+            {
+              "date": "2026-05-25",
+              "bsr": 2986
+            },
+            {
+              "date": "2026-05-26",
+              "bsr": 2815
+            },
+            {
+              "date": "2026-05-27",
+              "bsr": 3180
+            },
+            {
+              "date": "2026-05-28",
+              "bsr": 3675
+            },
+            {
+              "date": "2026-05-29",
+              "bsr": 4414
+            },
+            {
+              "date": "2026-05-30",
+              "bsr": 4582
+            },
+            {
+              "date": "2026-05-31",
+              "bsr": 4563
+            },
+            {
+              "date": "2026-06-01",
+              "bsr": 4257
+            },
+            {
+              "date": "2026-06-02",
+              "bsr": 4129
+            },
+            {
+              "date": "2026-06-03",
+              "bsr": 4206
+            },
+            {
+              "date": "2026-06-04",
+              "bsr": 4229
+            },
+            {
+              "date": "2026-06-05",
+              "bsr": 4522
+            },
+            {
+              "date": "2026-06-06",
+              "bsr": 4538
+            },
+            {
+              "date": "2026-06-07",
+              "bsr": 4539
+            },
+            {
+              "date": "2026-06-08",
+              "bsr": 3809
+            },
+            {
+              "date": "2026-06-09",
+              "bsr": 3275
+            },
+            {
+              "date": "2026-06-10",
+              "bsr": 3898
+            },
+            {
+              "date": "2026-06-11",
+              "bsr": 3943
+            },
+            {
+              "date": "2026-06-12",
+              "bsr": 4496
+            },
+            {
+              "date": "2026-06-13",
+              "bsr": 4693
+            },
+            {
+              "date": "2026-06-14",
+              "bsr": 4692
+            },
+            {
+              "date": "2026-06-15",
+              "bsr": 4595
+            },
+            {
+              "date": "2026-06-16",
+              "bsr": 4556
+            },
+            {
+              "date": "2026-06-17",
+              "bsr": 4943
+            },
+            {
+              "date": "2026-06-18",
+              "bsr": 4609
+            },
+            {
+              "date": "2026-06-19",
+              "bsr": 3848
+            },
+            {
+              "date": "2026-06-20",
+              "bsr": 4210
+            }
+          ]
+        }
+      },
+      {
+        "asin": "B09R53PL6C",
+        "category": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+        "categories": [
+          "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+        ],
+        "listingDate": "2022-01-25",
+        "source": "products-information",
+        "bsrTrend": {
+          "categoryId": "kitchen",
+          "categoryName": "Kitchen & Dining",
+          "pointCount": 1076,
+          "latestDate": "2026-06-20",
+          "latestBsr": 11410,
+          "recentPoints": [
+            {
+              "date": "2026-05-22",
+              "bsr": 16136
+            },
+            {
+              "date": "2026-05-23",
+              "bsr": 16135
+            },
+            {
+              "date": "2026-05-24",
+              "bsr": 18181
+            },
+            {
+              "date": "2026-05-25",
+              "bsr": 15063
+            },
+            {
+              "date": "2026-05-26",
+              "bsr": 13112
+            },
+            {
+              "date": "2026-05-27",
+              "bsr": 12978
+            },
+            {
+              "date": "2026-05-28",
+              "bsr": 12709
+            },
+            {
+              "date": "2026-05-29",
+              "bsr": 13085
+            },
+            {
+              "date": "2026-05-30",
+              "bsr": 13084
+            },
+            {
+              "date": "2026-05-31",
+              "bsr": 12847
+            },
+            {
+              "date": "2026-06-01",
+              "bsr": 12929
+            },
+            {
+              "date": "2026-06-02",
+              "bsr": 10736
+            },
+            {
+              "date": "2026-06-03",
+              "bsr": 10642
+            },
+            {
+              "date": "2026-06-04",
+              "bsr": 13103
+            },
+            {
+              "date": "2026-06-05",
+              "bsr": 13104
+            },
+            {
+              "date": "2026-06-06",
+              "bsr": 12897
+            },
+            {
+              "date": "2026-06-07",
+              "bsr": 11423
+            },
+            {
+              "date": "2026-06-08",
+              "bsr": 10836
+            },
+            {
+              "date": "2026-06-09",
+              "bsr": 10054
+            },
+            {
+              "date": "2026-06-10",
+              "bsr": 9767
+            },
+            {
+              "date": "2026-06-11",
+              "bsr": 12362
+            },
+            {
+              "date": "2026-06-12",
+              "bsr": 12357
+            },
+            {
+              "date": "2026-06-13",
+              "bsr": 11200
+            },
+            {
+              "date": "2026-06-14",
+              "bsr": 10435
+            },
+            {
+              "date": "2026-06-15",
+              "bsr": 9809
+            },
+            {
+              "date": "2026-06-16",
+              "bsr": 8023
+            },
+            {
+              "date": "2026-06-17",
+              "bsr": 7143
+            },
+            {
+              "date": "2026-06-18",
+              "bsr": 7696
+            },
+            {
+              "date": "2026-06-19",
+              "bsr": 7703
+            },
+            {
+              "date": "2026-06-20",
+              "bsr": 11410
+            }
+          ]
+        }
+      },
+      {
+        "asin": "B0C9GM6DK7",
+        "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "categories": [
+          "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+        ],
+        "listingDate": "2023-07-28",
+        "source": "products-information",
+        "bsrTrend": {
+          "categoryId": "kitchen",
+          "categoryName": "Kitchen & Dining",
+          "pointCount": 1021,
+          "latestDate": "2026-06-20",
+          "latestBsr": 6049,
+          "recentPoints": [
+            {
+              "date": "2026-05-22",
+              "bsr": 12080
+            },
+            {
+              "date": "2026-05-23",
+              "bsr": 10571
+            },
+            {
+              "date": "2026-05-24",
+              "bsr": 9963
+            },
+            {
+              "date": "2026-05-25",
+              "bsr": 9866
+            },
+            {
+              "date": "2026-05-26",
+              "bsr": 8386
+            },
+            {
+              "date": "2026-05-27",
+              "bsr": 8000
+            },
+            {
+              "date": "2026-05-28",
+              "bsr": 8558
+            },
+            {
+              "date": "2026-05-29",
+              "bsr": 8711
+            },
+            {
+              "date": "2026-05-30",
+              "bsr": 9551
+            },
+            {
+              "date": "2026-05-31",
+              "bsr": 9036
+            },
+            {
+              "date": "2026-06-01",
+              "bsr": 9034
+            },
+            {
+              "date": "2026-06-02",
+              "bsr": 8276
+            },
+            {
+              "date": "2026-06-03",
+              "bsr": 7994
+            },
+            {
+              "date": "2026-06-04",
+              "bsr": 8852
+            },
+            {
+              "date": "2026-06-05",
+              "bsr": 9619
+            },
+            {
+              "date": "2026-06-06",
+              "bsr": 11003
+            },
+            {
+              "date": "2026-06-07",
+              "bsr": 12638
+            },
+            {
+              "date": "2026-06-08",
+              "bsr": 12676
+            },
+            {
+              "date": "2026-06-09",
+              "bsr": 9844
+            },
+            {
+              "date": "2026-06-10",
+              "bsr": 11638
+            },
+            {
+              "date": "2026-06-11",
+              "bsr": 13355
+            },
+            {
+              "date": "2026-06-12",
+              "bsr": 13803
+            },
+            {
+              "date": "2026-06-13",
+              "bsr": 14875
+            },
+            {
+              "date": "2026-06-14",
+              "bsr": 11578
+            },
+            {
+              "date": "2026-06-15",
+              "bsr": 11562
+            },
+            {
+              "date": "2026-06-16",
+              "bsr": 6493
+            },
+            {
+              "date": "2026-06-17",
+              "bsr": 6455
+            },
+            {
+              "date": "2026-06-18",
+              "bsr": 6458
+            },
+            {
+              "date": "2026-06-19",
+              "bsr": 6516
+            },
+            {
+              "date": "2026-06-20",
+              "bsr": 6049
+            }
+          ]
+        }
+      },
+      {
+        "asin": "B0CCMYND9N",
+        "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+        "categories": [
+          "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+          "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "Kitchen & Dining > Cookware > Cookware Accessories",
+          "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+        ],
+        "listingDate": "2023-08-28",
+        "source": "products-information",
+        "bsrTrend": {
+          "categoryId": "kitchen",
+          "categoryName": "Kitchen & Dining",
+          "pointCount": 1000,
+          "latestDate": "2026-06-20",
+          "latestBsr": 11375,
+          "recentPoints": [
+            {
+              "date": "2026-05-22",
+              "bsr": 14935
+            },
+            {
+              "date": "2026-05-23",
+              "bsr": 17477
+            },
+            {
+              "date": "2026-05-24",
+              "bsr": 22960
+            },
+            {
+              "date": "2026-05-25",
+              "bsr": 30213
+            },
+            {
+              "date": "2026-05-26",
+              "bsr": 31686
+            },
+            {
+              "date": "2026-05-27",
+              "bsr": 28797
+            },
+            {
+              "date": "2026-05-28",
+              "bsr": 32367
+            },
+            {
+              "date": "2026-05-29",
+              "bsr": 29317
+            },
+            {
+              "date": "2026-05-30",
+              "bsr": 27545
+            },
+            {
+              "date": "2026-05-31",
+              "bsr": 25235
+            },
+            {
+              "date": "2026-06-01",
+              "bsr": 22113
+            },
+            {
+              "date": "2026-06-02",
+              "bsr": 17152
+            },
+            {
+              "date": "2026-06-03",
+              "bsr": 18850
+            },
+            {
+              "date": "2026-06-04",
+              "bsr": 21468
+            },
+            {
+              "date": "2026-06-05",
+              "bsr": 19637
+            },
+            {
+              "date": "2026-06-06",
+              "bsr": 16066
+            },
+            {
+              "date": "2026-06-07",
+              "bsr": 15805
+            },
+            {
+              "date": "2026-06-08",
+              "bsr": 15836
+            },
+            {
+              "date": "2026-06-09",
+              "bsr": 15064
+            },
+            {
+              "date": "2026-06-10",
+              "bsr": 12379
+            },
+            {
+              "date": "2026-06-11",
+              "bsr": 21652
+            },
+            {
+              "date": "2026-06-12",
+              "bsr": 26284
+            },
+            {
+              "date": "2026-06-13",
+              "bsr": 23844
+            },
+            {
+              "date": "2026-06-14",
+              "bsr": 18584
+            },
+            {
+              "date": "2026-06-15",
+              "bsr": 18585
+            },
+            {
+              "date": "2026-06-16",
+              "bsr": 16124
+            },
+            {
+              "date": "2026-06-17",
+              "bsr": 14470
+            },
+            {
+              "date": "2026-06-18",
+              "bsr": 13927
+            },
+            {
+              "date": "2026-06-19",
+              "bsr": 13070
+            },
+            {
+              "date": "2026-06-20",
+              "bsr": 11375
+            }
+          ]
+        }
+      },
+      {
+        "asin": "B0CFV6DT27",
+        "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+        "categories": [
+          "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+          "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+          "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+        ],
+        "listingDate": "2023-08-16",
+        "source": "products-information",
+        "bsrTrend": {
+          "categoryId": "kitchen",
+          "categoryName": "Kitchen & Dining",
+          "pointCount": 882,
+          "latestDate": "2026-06-20",
+          "latestBsr": 11265,
+          "recentPoints": [
+            {
+              "date": "2026-05-22",
+              "bsr": 13061
+            },
+            {
+              "date": "2026-05-23",
+              "bsr": 11690
+            },
+            {
+              "date": "2026-05-24",
+              "bsr": 12492
+            },
+            {
+              "date": "2026-05-25",
+              "bsr": 11823
+            },
+            {
+              "date": "2026-05-26",
+              "bsr": 11166
+            },
+            {
+              "date": "2026-05-27",
+              "bsr": 11165
+            },
+            {
+              "date": "2026-05-28",
+              "bsr": 12260
+            },
+            {
+              "date": "2026-05-29",
+              "bsr": 11514
+            },
+            {
+              "date": "2026-05-30",
+              "bsr": 11258
+            },
+            {
+              "date": "2026-05-31",
+              "bsr": 10571
+            },
+            {
+              "date": "2026-06-01",
+              "bsr": 10448
+            },
+            {
+              "date": "2026-06-02",
+              "bsr": 10245
+            },
+            {
+              "date": "2026-06-03",
+              "bsr": 10262
+            },
+            {
+              "date": "2026-06-04",
+              "bsr": 11808
+            },
+            {
+              "date": "2026-06-05",
+              "bsr": 11956
+            },
+            {
+              "date": "2026-06-06",
+              "bsr": 13140
+            },
+            {
+              "date": "2026-06-07",
+              "bsr": 11582
+            },
+            {
+              "date": "2026-06-08",
+              "bsr": 8991
+            },
+            {
+              "date": "2026-06-09",
+              "bsr": 9508
+            },
+            {
+              "date": "2026-06-10",
+              "bsr": 9510
+            },
+            {
+              "date": "2026-06-11",
+              "bsr": 11190
+            },
+            {
+              "date": "2026-06-12",
+              "bsr": 12311
+            },
+            {
+              "date": "2026-06-13",
+              "bsr": 10542
+            },
+            {
+              "date": "2026-06-14",
+              "bsr": 10916
+            },
+            {
+              "date": "2026-06-15",
+              "bsr": 9401
+            },
+            {
+              "date": "2026-06-16",
+              "bsr": 9209
+            },
+            {
+              "date": "2026-06-17",
+              "bsr": 9343
+            },
+            {
+              "date": "2026-06-18",
+              "bsr": 10281
+            },
+            {
+              "date": "2026-06-19",
+              "bsr": 11703
+            },
+            {
+              "date": "2026-06-20",
+              "bsr": 11265
+            }
+          ]
+        }
+      },
+      {
+        "asin": "B0DGG36B2G",
+        "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+        "categories": [
+          "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+        ],
+        "listingDate": "2024-10-16",
+        "source": "products-information",
+        "bsrTrend": {
+          "categoryId": "kitchen",
+          "categoryName": "Kitchen & Dining",
+          "pointCount": 604,
+          "latestDate": "2026-06-20",
+          "latestBsr": 2772,
+          "recentPoints": [
+            {
+              "date": "2026-05-22",
+              "bsr": 1156
+            },
+            {
+              "date": "2026-05-23",
+              "bsr": 1891
+            },
+            {
+              "date": "2026-05-24",
+              "bsr": 2172
+            },
+            {
+              "date": "2026-05-25",
+              "bsr": 2266
+            },
+            {
+              "date": "2026-05-26",
+              "bsr": 2315
+            },
+            {
+              "date": "2026-05-27",
+              "bsr": 2899
+            },
+            {
+              "date": "2026-05-28",
+              "bsr": 2937
+            },
+            {
+              "date": "2026-05-29",
+              "bsr": 2764
+            },
+            {
+              "date": "2026-05-30",
+              "bsr": 3114
+            },
+            {
+              "date": "2026-05-31",
+              "bsr": 3179
+            },
+            {
+              "date": "2026-06-01",
+              "bsr": 3178
+            },
+            {
+              "date": "2026-06-02",
+              "bsr": 2756
+            },
+            {
+              "date": "2026-06-03",
+              "bsr": 2994
+            },
+            {
+              "date": "2026-06-04",
+              "bsr": 3126
+            },
+            {
+              "date": "2026-06-05",
+              "bsr": 3105
+            },
+            {
+              "date": "2026-06-06",
+              "bsr": 2844
+            },
+            {
+              "date": "2026-06-07",
+              "bsr": 2815
+            },
+            {
+              "date": "2026-06-08",
+              "bsr": 2826
+            },
+            {
+              "date": "2026-06-09",
+              "bsr": 2588
+            },
+            {
+              "date": "2026-06-10",
+              "bsr": 2866
+            },
+            {
+              "date": "2026-06-11",
+              "bsr": 2881
+            },
+            {
+              "date": "2026-06-12",
+              "bsr": 3214
+            },
+            {
+              "date": "2026-06-13",
+              "bsr": 3441
+            },
+            {
+              "date": "2026-06-14",
+              "bsr": 3881
+            },
+            {
+              "date": "2026-06-15",
+              "bsr": 3882
+            },
+            {
+              "date": "2026-06-16",
+              "bsr": 3807
+            },
+            {
+              "date": "2026-06-17",
+              "bsr": 4146
+            },
+            {
+              "date": "2026-06-18",
+              "bsr": 3444
+            },
+            {
+              "date": "2026-06-19",
+              "bsr": 2873
+            },
+            {
+              "date": "2026-06-20",
+              "bsr": 2772
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "listingDateSupplementSummary": {
+    "checked": 1,
+    "supplemented": 0,
+    "failed": 1,
+    "items": [
+      {
+        "asin": "B0GJPYRLCW",
+        "listingDate": "",
+        "source": "products-information"
+      }
+    ]
+  },
+  "data": [
+    {
+      "asin": "B0D6YS22DG",
+      "pasin": "B0DC6F35GZ",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "2,022",
+      "revenue": "$30,309.78",
+      "salesCellText": "2,022\n-12.92%",
+      "revenueCellText": "$30,309.78\n-12.92%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 4207,
+      "title": "DATANYA 12Packs 4 Inch English Muffin Rings Crumpet Rings Stainless Steel Double Rolled Tart Rings, ",
+      "listingDate": "2024-06-13",
+      "listingAge": "2年0月7天",
+      "brand": "DATANYA",
+      "price": "$14.99",
+      "margin": "$5.66\n45.96%",
+      "weight": "--",
+      "ratings": "553",
+      "subRank": "1",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0DC6F35GZ",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "5",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0D8SSWMVV",
+        "B0D6YS22DG"
+      ],
+      "childAsinCount": 2,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 2
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0D8SSWMVV",
+          "pasin": "B0DC6F35GZ",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "2,022",
+          "revenue": "$26,265.78",
+          "salesCellText": "2,022\n-12.92%",
+          "revenueCellText": "$26,265.78\n-24.54%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 4346,
+          "title": "16Packs English Muffin Rings Crumpet Rings 4 inch Stainless Steel Double Rolled Tart Rings 4 inch & ",
+          "listingDate": "2024-07-04",
+          "listingAge": "1年11月16天",
+          "brand": "DATANYA",
+          "price": "$12.99",
+          "margin": "$5.13\n45.5%",
+          "weight": "0.40 kg",
+          "ratings": "553",
+          "subRank": "1"
+        },
+        {
+          "asin": "B0D6YS22DG",
+          "pasin": "B0DC6F35GZ",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "2,022",
+          "revenue": "$30,309.78",
+          "salesCellText": "2,022\n-12.92%",
+          "revenueCellText": "$30,309.78\n-12.92%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 4207,
+          "title": "DATANYA 12Packs 4 Inch English Muffin Rings Crumpet Rings Stainless Steel Double Rolled Tart Rings, ",
+          "listingDate": "2024-06-13",
+          "listingAge": "2年0月7天",
+          "brand": "DATANYA",
+          "price": "$14.99",
+          "margin": "$5.66\n45.96%",
+          "weight": "--",
+          "ratings": "553",
+          "subRank": "1"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": true,
+      "variantRowCount": 2,
+      "salesNumAggregated": 2022,
+      "revenueNumAggregated": 30309.8,
+      "ratingsNumAggregated": 553,
+      "aggregatedMetricAsins": [
+        "B0D8SSWMVV",
+        "B0D6YS22DG"
+      ],
+      "aggregatedMetricRowCount": 2,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "shared",
+      "ratingsMetricReason": "duplicate-child-ratings",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0D8SSWMVV",
+          "value": 553
+        },
+        {
+          "asin": "B0D6YS22DG",
+          "value": 553
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0D8SSWMVV",
+        "B0D6YS22DG"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B08DCT46MJ",
+      "pasin": "B0GCMZ8VH5",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "1,188",
+      "revenue": "$9,492.12",
+      "salesCellText": "1,188\n-2.78%",
+      "revenueCellText": "$9,492.12\n-13.6%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 6089,
+      "title": "FANGSUN 4 Inch English Muffin Rings, Stainless Steel Crumpet Rings, Tart Rings for Baking, Double Ro",
+      "listingDate": "2020-07-21",
+      "listingAge": "5年10月30天",
+      "brand": "FANGSUN",
+      "price": "$7.99",
+      "margin": "$3.91",
+      "weight": "0.14 kg",
+      "ratings": "2,341",
+      "subRank": "2",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0GCMZ8VH5",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "5",
+      "sellerCount": "1",
+      "childAsins": [
+        "B08DCT46MJ",
+        "B0C3G5JSNF",
+        "B0GHDYM332"
+      ],
+      "childAsinCount": 3,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 3
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B08DCT46MJ",
+          "pasin": "B0GCMZ8VH5",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "1,188",
+          "revenue": "$9,492.12",
+          "salesCellText": "1,188\n-2.78%",
+          "revenueCellText": "$9,492.12\n-13.6%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 6089,
+          "title": "FANGSUN 4 Inch English Muffin Rings, Stainless Steel Crumpet Rings, Tart Rings for Baking, Double Ro",
+          "listingDate": "2020-07-21",
+          "listingAge": "5年10月30天",
+          "brand": "FANGSUN",
+          "price": "$7.99",
+          "margin": "$3.91",
+          "weight": "0.14 kg",
+          "ratings": "2,341",
+          "subRank": "2"
+        },
+        {
+          "asin": "B0C3G5JSNF",
+          "pasin": "B0GCMZ8VH5",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "1,188",
+          "revenue": "$15,432.12",
+          "salesCellText": "1,188\n-2.78%",
+          "revenueCellText": "$15,432.12\n-9.73%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 8143,
+          "title": "FANGSUN Crumpet Rings, English Muffin Rings 4 Inch,Stainless Steel Tart Rings for Baking,Double Roll",
+          "listingDate": "2023-04-25",
+          "listingAge": "3年1月26天",
+          "brand": "FANGSUN",
+          "price": "$12.99",
+          "margin": "$4.6\n49.58%",
+          "weight": "0.16 kg",
+          "ratings": "--",
+          "subRank": "2"
+        },
+        {
+          "asin": "B0GHDYM332",
+          "pasin": "B0GCMZ8VH5",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "1,172",
+          "revenue": "$17,568.28",
+          "salesCellText": "1,172\n-4.09%",
+          "revenueCellText": "$17,568.28\n-10.09%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 6306,
+          "title": "FANGSUN 12 Packs English Muffin Rings, 4 Inch + 3.15 Inch Stainless Steel Crumpet Rings, Tart Rings ",
+          "listingDate": "",
+          "listingAge": "",
+          "brand": "FANGSUN",
+          "price": "$14.99",
+          "margin": "$5.42\n56.45%",
+          "weight": "--",
+          "ratings": "2,341",
+          "subRank": "2"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": true,
+      "variantRowCount": 3,
+      "salesNumAggregated": 1188,
+      "revenueNumAggregated": 9492.1,
+      "ratingsNumAggregated": 2341,
+      "aggregatedMetricAsins": [
+        "B08DCT46MJ",
+        "B0C3G5JSNF",
+        "B0GHDYM332"
+      ],
+      "aggregatedMetricRowCount": 3,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "shared",
+      "ratingsMetricReason": "duplicate-child-ratings",
+      "ratingsMetricValues": [
+        {
+          "asin": "B08DCT46MJ",
+          "value": 2341
+        },
+        {
+          "asin": "B0GHDYM332",
+          "value": 2341
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B08DCT46MJ",
+        "B0C3G5JSNF",
+        "B0GHDYM332"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B0GJPYRLCW",
+      "pasin": "B0D9BGJ973",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "951",
+      "revenue": "$9,500.49",
+      "salesCellText": "951\n+14.44%",
+      "revenueCellText": "$9,500.49\n+14.44%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 10159,
+      "title": "RICHSC-PAN Crumpet Rings, 10Pack English Muffin Ring, Outer diameter 4 Inch+3.2Inch Food-Grade Stain",
+      "listingDate": "",
+      "listingAge": "",
+      "brand": "RICHSC-PAN",
+      "price": "$9.99",
+      "margin": "$3.38",
+      "weight": "0.25 kg",
+      "ratings": "494",
+      "subRank": "4",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0D9BGJ973",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0GJPYRLCW",
+        "B0GSSZSJVQ"
+      ],
+      "childAsinCount": 2,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 2
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0GJPYRLCW",
+          "pasin": "B0D9BGJ973",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "951",
+          "revenue": "$9,500.49",
+          "salesCellText": "951\n+14.44%",
+          "revenueCellText": "$9,500.49\n+14.44%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 10159,
+          "title": "RICHSC-PAN Crumpet Rings, 10Pack English Muffin Ring, Outer diameter 4 Inch+3.2Inch Food-Grade Stain",
+          "listingDate": "",
+          "listingAge": "",
+          "brand": "RICHSC-PAN",
+          "price": "$9.99",
+          "margin": "$3.38",
+          "weight": "0.25 kg",
+          "ratings": "494",
+          "subRank": "4"
+        },
+        {
+          "asin": "B0GSSZSJVQ",
+          "pasin": "B0D9BGJ973",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "951",
+          "revenue": "$11,877.99",
+          "salesCellText": "951",
+          "revenueCellText": "$11,877.99",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 13782,
+          "title": "RICHSC-PAN Crumpet Rings, 16Pack Cookie Ring, Outer diameter 3.2Inch+2.1Inch Food-Grade Stainless St",
+          "listingDate": "2026-03-17",
+          "listingAge": "",
+          "brand": "RICHSC-PAN",
+          "price": "$12.49",
+          "margin": "$4.62",
+          "weight": "0.32 kg\n10.04 inches³",
+          "ratings": "494",
+          "subRank": "8"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": true,
+      "variantRowCount": 2,
+      "salesNumAggregated": 951,
+      "revenueNumAggregated": 9500.5,
+      "ratingsNumAggregated": 494,
+      "aggregatedMetricAsins": [
+        "B0GJPYRLCW",
+        "B0GSSZSJVQ"
+      ],
+      "aggregatedMetricRowCount": 2,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "shared",
+      "ratingsMetricReason": "duplicate-child-ratings",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0GJPYRLCW",
+          "value": 494
+        },
+        {
+          "asin": "B0GSSZSJVQ",
+          "value": 494
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0GJPYRLCW",
+        "B0GSSZSJVQ"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B0861D8DTN",
+      "pasin": "B08FXMTYJ4",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "951",
+      "revenue": "$9,500.49",
+      "salesCellText": "951\n+5.08%",
+      "revenueCellText": "$9,500.49\n-12.45%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 9094,
+      "title": "HULISEN Round Cake Ring Mold, Stainless Steel 3” Cooking Crumpet Rings with 1 Pusher & 4 Food Form, ",
+      "listingDate": "2020-03-17",
+      "listingAge": "6年3月3天",
+      "brand": "HULISEN",
+      "price": "$9.99",
+      "margin": "$4.35\n51.5%",
+      "weight": "0.27 kg",
+      "ratings": "1,726",
+      "subRank": "4",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B08FXMTYJ4",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "4",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0861D8DTN"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0861D8DTN",
+          "pasin": "B08FXMTYJ4",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "951",
+          "revenue": "$9,500.49",
+          "salesCellText": "951\n+5.08%",
+          "revenueCellText": "$9,500.49\n-12.45%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 9094,
+          "title": "HULISEN Round Cake Ring Mold, Stainless Steel 3” Cooking Crumpet Rings with 1 Pusher & 4 Food Form, ",
+          "listingDate": "2020-03-17",
+          "listingAge": "6年3月3天",
+          "brand": "HULISEN",
+          "price": "$9.99",
+          "margin": "$4.35\n51.5%",
+          "weight": "0.27 kg",
+          "ratings": "1,726",
+          "subRank": "4"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 951,
+      "revenueNumAggregated": 9500.5,
+      "ratingsNumAggregated": 1726,
+      "aggregatedMetricAsins": [
+        "B0861D8DTN"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0861D8DTN",
+          "value": 1726
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0861D8DTN"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B0D6LNMJ1V",
+      "pasin": "B0DCK3J6SN",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "863",
+      "revenue": "$13,799.37",
+      "salesCellText": "863\n-13.61%",
+      "revenueCellText": "$13,799.37\n-13.61%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 12960,
+      "title": "16Packs English Muffin Rings Crumpet Rings NONSTICK -Stainless Steel Double Rolled Tart Rings 3.15 I",
+      "listingDate": "2024-06-09",
+      "listingAge": "2年0月11天",
+      "brand": "DATANYA",
+      "price": "$15.99",
+      "margin": "$5.13\n52.91%",
+      "weight": "0.40 kg",
+      "ratings": "643",
+      "subRank": "5",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0DCK3J6SN",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "5",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0D6LNMJ1V"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0D6LNMJ1V",
+          "pasin": "B0DCK3J6SN",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "863",
+          "revenue": "$13,799.37",
+          "salesCellText": "863\n-13.61%",
+          "revenueCellText": "$13,799.37\n-13.61%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 12960,
+          "title": "16Packs English Muffin Rings Crumpet Rings NONSTICK -Stainless Steel Double Rolled Tart Rings 3.15 I",
+          "listingDate": "2024-06-09",
+          "listingAge": "2年0月11天",
+          "brand": "DATANYA",
+          "price": "$15.99",
+          "margin": "$5.13\n52.91%",
+          "weight": "0.40 kg",
+          "ratings": "643",
+          "subRank": "5"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 863,
+      "revenueNumAggregated": 13799.4,
+      "ratingsNumAggregated": 643,
+      "aggregatedMetricAsins": [
+        "B0D6LNMJ1V"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0D6LNMJ1V",
+          "value": 643
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0D6LNMJ1V"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B0F7QTDSCW",
+      "pasin": "B0CBWR35V2",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "660",
+      "revenue": "$9,233.4",
+      "salesCellText": "660\n+2.33%",
+      "revenueCellText": "$9,233.4\n+2.33%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 14912,
+      "title": "12packs Crumpet Rings 4 Inch English Muffin Rings Stainless Steel Double Rolled Nonstick Metal Round",
+      "listingDate": "2025-05-07",
+      "listingAge": "1年1月13天",
+      "brand": "KUAYB",
+      "price": "$13.99",
+      "margin": "$5.66\n44.53%",
+      "weight": "0.34 kg",
+      "ratings": "386",
+      "subRank": "8",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0CBWR35V2",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "8",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0F7QTDSCW",
+        "B0GCZZH3SV"
+      ],
+      "childAsinCount": 2,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 2
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0F7QTDSCW",
+          "pasin": "B0CBWR35V2",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "660",
+          "revenue": "$9,233.4",
+          "salesCellText": "660\n+2.33%",
+          "revenueCellText": "$9,233.4\n+2.33%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 14912,
+          "title": "12packs Crumpet Rings 4 Inch English Muffin Rings Stainless Steel Double Rolled Nonstick Metal Round",
+          "listingDate": "2025-05-07",
+          "listingAge": "1年1月13天",
+          "brand": "KUAYB",
+          "price": "$13.99",
+          "margin": "$5.66\n44.53%",
+          "weight": "0.34 kg",
+          "ratings": "386",
+          "subRank": "8"
+        },
+        {
+          "asin": "B0GCZZH3SV",
+          "pasin": "B0CBWR35V2",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "660",
+          "revenue": "$15,833.4",
+          "salesCellText": "660",
+          "revenueCellText": "$15,833.4",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 15449,
+          "title": "24packs Crumpet Rings 4 Inch English Muffin Rings Stainless Steel Double Rolled Nonstick Metal Round",
+          "listingDate": "",
+          "listingAge": "",
+          "brand": "KUAYB",
+          "price": "$23.99",
+          "margin": "$7.53",
+          "weight": "--",
+          "ratings": "386",
+          "subRank": "8"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": true,
+      "variantRowCount": 2,
+      "salesNumAggregated": 660,
+      "revenueNumAggregated": 9233.4,
+      "ratingsNumAggregated": 386,
+      "aggregatedMetricAsins": [
+        "B0F7QTDSCW",
+        "B0GCZZH3SV"
+      ],
+      "aggregatedMetricRowCount": 2,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "shared",
+      "ratingsMetricReason": "duplicate-child-ratings",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0F7QTDSCW",
+          "value": 386
+        },
+        {
+          "asin": "B0GCZZH3SV",
+          "value": 386
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0F7QTDSCW",
+        "B0GCZZH3SV"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B0CCMYND9N",
+      "pasin": "B0DF7QCN94",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+        "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+        "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+        "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+        "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+        "Kitchen & Dining > Cookware > Cookware Accessories",
+        "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "500",
+      "revenue": "$6,495",
+      "salesCellText": "500\n-38.8%",
+      "revenueCellText": "$6,495\n-20.42%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 18585,
+      "title": "Large 2 Packs 8\" Omelette Ring for Griddle,Stainless Steel 8 Inch Griddle Omelet Rings,Non-Stick Pan",
+      "listingDate": "2023-08-28",
+      "listingAge": "2年9月23天",
+      "brand": "WOWITIS",
+      "price": "$12.99",
+      "margin": "$4.22\n42.74%",
+      "weight": "0.35 kg",
+      "ratings": "644",
+      "subRank": "--",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0DF7QCN94",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "2",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0CCMYND9N"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Cookware > Cookware Accessories",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0CCMYND9N",
+          "pasin": "B0DF7QCN94",
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+          "categories": [
+            "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+            "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+            "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+            "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+            "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+            "Kitchen & Dining > Cookware > Cookware Accessories",
+            "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "500",
+          "revenue": "$6,495",
+          "salesCellText": "500\n-38.8%",
+          "revenueCellText": "$6,495\n-20.42%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 18585,
+          "title": "Large 2 Packs 8\" Omelette Ring for Griddle,Stainless Steel 8 Inch Griddle Omelet Rings,Non-Stick Pan",
+          "listingDate": "2023-08-28",
+          "listingAge": "2年9月23天",
+          "brand": "WOWITIS",
+          "price": "$12.99",
+          "margin": "$4.22\n42.74%",
+          "weight": "0.35 kg",
+          "ratings": "644",
+          "subRank": "--"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 500,
+      "revenueNumAggregated": 6495,
+      "ratingsNumAggregated": 644,
+      "aggregatedMetricAsins": [
+        "B0CCMYND9N"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0CCMYND9N",
+          "value": 644
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0CCMYND9N"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B0919BB155",
+      "pasin": "B0B37CXM7V",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "984",
+      "revenue": "$26,558.16",
+      "salesCellText": "984\n+43.44%",
+      "revenueCellText": "$26,558.16\n+43.44%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 7294,
+      "title": "Blackstone Egg & Omelet Ring Kit (7 Piece Set) – Non Stick Silicone Egg & Omelette Cooker Mold for P",
+      "listingDate": "2021-03-29",
+      "listingAge": "5年2月22天",
+      "brand": "BLACKSTONE",
+      "price": "$26.99",
+      "margin": "$6.31\n57.98%",
+      "weight": "0.45 kg",
+      "ratings": "1,239",
+      "subRank": "3",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0B37CXM7V",
+      "sellerType": "亚马逊自营  AMAZON  market.country.",
+      "variants": "2",
+      "sellerCount": "33",
+      "childAsins": [
+        "B0919BB155"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0919BB155",
+          "pasin": "B0B37CXM7V",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "984",
+          "revenue": "$26,558.16",
+          "salesCellText": "984\n+43.44%",
+          "revenueCellText": "$26,558.16\n+43.44%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 7294,
+          "title": "Blackstone Egg & Omelet Ring Kit (7 Piece Set) – Non Stick Silicone Egg & Omelette Cooker Mold for P",
+          "listingDate": "2021-03-29",
+          "listingAge": "5年2月22天",
+          "brand": "BLACKSTONE",
+          "price": "$26.99",
+          "margin": "$6.31\n57.98%",
+          "weight": "0.45 kg",
+          "ratings": "1,239",
+          "subRank": "3"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 984,
+      "revenueNumAggregated": 26558.2,
+      "ratingsNumAggregated": 1239,
+      "aggregatedMetricAsins": [
+        "B0919BB155"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0919BB155",
+          "value": 1239
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0919BB155"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B09R53PL6C",
+      "pasin": "B09R53PL6C",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+        "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+        "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+        "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "808",
+      "revenue": "$15,182.32",
+      "salesCellText": "808\n+79.56%",
+      "revenueCellText": "$15,182.32\n+79.56%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 7703,
+      "title": "BLACKSTONE 5600 Silicone Egg & Omelet Ring (Set of 3) for Breakfast, Non Stick Food Grade Round Egg ",
+      "listingDate": "2022-01-25",
+      "listingAge": "4年4月26天",
+      "brand": "BLACKSTONE",
+      "price": "$18.79",
+      "margin": "$5.61\n59.48%",
+      "weight": "0.21 kg",
+      "ratings": "223",
+      "subRank": "--",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B09R53PL6C",
+      "sellerType": "亚马逊自营  AMAZON  market.country.",
+      "variants": "1",
+      "sellerCount": "12",
+      "childAsins": [
+        "B09R53PL6C"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B09R53PL6C",
+          "pasin": "B09R53PL6C",
+          "category": "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Home & Kitchen > Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+            "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+            "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Baking Tools & Accessories > Cake Rings",
+            "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "808",
+          "revenue": "$15,182.32",
+          "salesCellText": "808\n+79.56%",
+          "revenueCellText": "$15,182.32\n+79.56%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 7703,
+          "title": "BLACKSTONE 5600 Silicone Egg & Omelet Ring (Set of 3) for Breakfast, Non Stick Food Grade Round Egg ",
+          "listingDate": "2022-01-25",
+          "listingAge": "4年4月26天",
+          "brand": "BLACKSTONE",
+          "price": "$18.79",
+          "margin": "$5.61\n59.48%",
+          "weight": "0.21 kg",
+          "ratings": "223",
+          "subRank": "--"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 808,
+      "revenueNumAggregated": 15182.3,
+      "ratingsNumAggregated": 223,
+      "aggregatedMetricAsins": [
+        "B09R53PL6C"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B09R53PL6C",
+          "value": 223
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B09R53PL6C"
+      ],
+      "targetCategoryDirectMatched": true
+    },
+    {
+      "asin": "B0CCCYXDVB",
+      "pasin": "B0D6RQBN5T",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "sales": "642",
+      "revenue": "$10,265.58",
+      "salesCellText": "642\n-2.73%",
+      "revenueCellText": "$10,265.58\n-5.68%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 15677,
+      "title": "12Pack Tart Rings 3.15 Inch Perforated Tart Ring Stainless Steel, Round Mousse Cake Ring Metal Pastr",
+      "listingDate": "2023-07-20",
+      "listingAge": "2年11月0天",
+      "brand": "DATANYA",
+      "price": "$15.99",
+      "margin": "$5.61\n49.91%",
+      "weight": "0.32 kg",
+      "ratings": "423",
+      "subRank": "7",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0D6RQBN5T",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "6",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0CCCYXDVB"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0CCCYXDVB",
+          "pasin": "B0D6RQBN5T",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+          ],
+          "sales": "642",
+          "revenue": "$10,265.58",
+          "salesCellText": "642\n-2.73%",
+          "revenueCellText": "$10,265.58\n-5.68%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 15677,
+          "title": "12Pack Tart Rings 3.15 Inch Perforated Tart Ring Stainless Steel, Round Mousse Cake Ring Metal Pastr",
+          "listingDate": "2023-07-20",
+          "listingAge": "2年11月0天",
+          "brand": "DATANYA",
+          "price": "$15.99",
+          "margin": "$5.61\n49.91%",
+          "weight": "0.32 kg",
+          "ratings": "423",
+          "subRank": "7"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 642,
+      "revenueNumAggregated": 10265.6,
+      "ratingsNumAggregated": 423,
+      "aggregatedMetricAsins": [
+        "B0CCCYXDVB"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0CCCYXDVB",
+          "value": 423
+        }
+      ],
+      "targetMatchedCategories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cake Rings"
+      ],
+      "targetMatchedChildAsins": [
+        "B0CCCYXDVB"
+      ],
+      "targetCategoryDirectMatched": true
+    }
+  ],
+  "excluded": [
+    {
+      "asin": "B085ZTGGTJ",
+      "pasin": "B0CW3915TY",
+      "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      "categories": [
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+      ],
+      "sales": "6,570",
+      "revenue": "$78,774.3",
+      "salesCellText": "6,570\n+48.47%",
+      "revenueCellText": "$78,774.3\n+48.47%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 1129,
+      "title": "COTEY Large 3.5\" Nonstick Egg Rings Set of 4, Round Crumpet Ring Mold Shaper for English Muffins Pan",
+      "listingDate": "2020-04-15",
+      "listingAge": "6年2月5天",
+      "brand": "COTEY",
+      "price": "$11.99",
+      "margin": "$4.09\n44.04%",
+      "weight": "0.14 kg",
+      "ratings": "12,945",
+      "subRank": "1",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0CW3915TY",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "2",
+      "childAsins": [
+        "B085ZTGGTJ"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B085ZTGGTJ",
+          "pasin": "B0CW3915TY",
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "categories": [
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+          ],
+          "sales": "6,570",
+          "revenue": "$78,774.3",
+          "salesCellText": "6,570\n+48.47%",
+          "revenueCellText": "$78,774.3\n+48.47%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 1129,
+          "title": "COTEY Large 3.5\" Nonstick Egg Rings Set of 4, Round Crumpet Ring Mold Shaper for English Muffins Pan",
+          "listingDate": "2020-04-15",
+          "listingAge": "6年2月5天",
+          "brand": "COTEY",
+          "price": "$11.99",
+          "margin": "$4.09\n44.04%",
+          "weight": "0.14 kg",
+          "ratings": "12,945",
+          "subRank": "1"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 6570,
+      "revenueNumAggregated": 78774.3,
+      "ratingsNumAggregated": 12945,
+      "aggregatedMetricAsins": [
+        "B085ZTGGTJ"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B085ZTGGTJ",
+          "value": 12945
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B0DGG36B2G",
+      "pasin": "B0DGG392RG",
+      "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      "categories": [
+        "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+      ],
+      "sales": "2,928",
+      "revenue": "$20,056.8",
+      "salesCellText": "2,928\n+9.66%",
+      "revenueCellText": "$20,056.8\n+37.08%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 3882,
+      "title": "3.5\" Egg Rings Set of 2 with Silicone Handle, Round Mold for English Muffins,Pancake Mold for Indoor",
+      "listingDate": "2024-10-16",
+      "listingAge": "1年8月4天",
+      "brand": "suyncyi",
+      "price": "$6.85",
+      "margin": "$3.24\n37.66%",
+      "weight": "0.13 kg",
+      "ratings": "997",
+      "subRank": "--",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0DGG392RG",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "2",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0DGG36B2G"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0DGG36B2G",
+          "pasin": "B0DGG392RG",
+          "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "categories": [
+            "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+          ],
+          "sales": "2,928",
+          "revenue": "$20,056.8",
+          "salesCellText": "2,928\n+9.66%",
+          "revenueCellText": "$20,056.8\n+37.08%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 3882,
+          "title": "3.5\" Egg Rings Set of 2 with Silicone Handle, Round Mold for English Muffins,Pancake Mold for Indoor",
+          "listingDate": "2024-10-16",
+          "listingAge": "1年8月4天",
+          "brand": "suyncyi",
+          "price": "$6.85",
+          "margin": "$3.24\n37.66%",
+          "weight": "0.13 kg",
+          "ratings": "997",
+          "subRank": "--"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 2928,
+      "revenueNumAggregated": 20056.8,
+      "ratingsNumAggregated": 997,
+      "aggregatedMetricAsins": [
+        "B0DGG36B2G"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0DGG36B2G",
+          "value": 997
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B085ZKR1XK",
+      "pasin": "B09Z8JB8RF",
+      "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      "categories": [
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+      ],
+      "sales": "2,918",
+      "revenue": "$23,314.82",
+      "salesCellText": "2,918\n-4.64%",
+      "revenueCellText": "$23,314.82\n-4.64%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 2318,
+      "title": "COTEY 3.5\" Egg Rings Set of 2 with Silicone Handle, Large Ring for Frying Eggs, Round Mold for Engli",
+      "listingDate": "2020-04-15",
+      "listingAge": "6年2月5天",
+      "brand": "COTEY",
+      "price": "$7.99",
+      "margin": "$3.91\n36.05%",
+      "weight": "0.09 kg",
+      "ratings": "8,014",
+      "subRank": "2",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B09Z8JB8RF",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B085ZKR1XK"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B085ZKR1XK",
+          "pasin": "B09Z8JB8RF",
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "categories": [
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+          ],
+          "sales": "2,918",
+          "revenue": "$23,314.82",
+          "salesCellText": "2,918\n-4.64%",
+          "revenueCellText": "$23,314.82\n-4.64%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 2318,
+          "title": "COTEY 3.5\" Egg Rings Set of 2 with Silicone Handle, Large Ring for Frying Eggs, Round Mold for Engli",
+          "listingDate": "2020-04-15",
+          "listingAge": "6年2月5天",
+          "brand": "COTEY",
+          "price": "$7.99",
+          "margin": "$3.91\n36.05%",
+          "weight": "0.09 kg",
+          "ratings": "8,014",
+          "subRank": "2"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 2918,
+      "revenueNumAggregated": 23314.8,
+      "ratingsNumAggregated": 8014,
+      "aggregatedMetricAsins": [
+        "B085ZKR1XK"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B085ZKR1XK",
+          "value": 8014
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B09G9GZZ2V",
+      "pasin": "B0DG2XDJ14",
+      "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+      "categories": [
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+      ],
+      "sales": "2,257",
+      "revenue": "$22,547.43",
+      "salesCellText": "2,257\n+34.91%",
+      "revenueCellText": "$22,547.43\n+49.91%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 4748,
+      "title": "4 Pack 3.5 Inch Nonstick Stainless Steel Egg Rings for Frying Eggs | Round Griddle Cooking Molds wit",
+      "listingDate": "2021-09-15",
+      "listingAge": "4年9月5天",
+      "brand": "Ameupin",
+      "price": "$9.99",
+      "margin": "$8.19\n3%",
+      "weight": "0.33 kg",
+      "ratings": "2,772",
+      "subRank": "4",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0DG2XDJ14",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "2",
+      "sellerCount": "15",
+      "childAsins": [
+        "B09G9GZZ2V"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B09G9GZZ2V",
+          "pasin": "B0DG2XDJ14",
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators",
+          "categories": [
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets > Egg Separators"
+          ],
+          "sales": "2,257",
+          "revenue": "$22,547.43",
+          "salesCellText": "2,257\n+34.91%",
+          "revenueCellText": "$22,547.43\n+49.91%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 4748,
+          "title": "4 Pack 3.5 Inch Nonstick Stainless Steel Egg Rings for Frying Eggs | Round Griddle Cooking Molds wit",
+          "listingDate": "2021-09-15",
+          "listingAge": "4年9月5天",
+          "brand": "Ameupin",
+          "price": "$9.99",
+          "margin": "$8.19\n3%",
+          "weight": "0.33 kg",
+          "ratings": "2,772",
+          "subRank": "4"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 2257,
+      "revenueNumAggregated": 22547.4,
+      "ratingsNumAggregated": 2772,
+      "aggregatedMetricAsins": [
+        "B09G9GZZ2V"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B09G9GZZ2V",
+          "value": 2772
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B08GPG1SC5",
+      "pasin": "B0CYTDMSVN",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+      ],
+      "sales": "4,736",
+      "revenue": "$61,520.64",
+      "salesCellText": "4,736",
+      "revenueCellText": "$61,520.64",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 1082,
+      "title": "HULISEN Stainless Steel Round Cookie Biscuit Cutter Set, 11 Circle Donut Doughnut Cutter, Baking Rin",
+      "listingDate": "2020-05-06",
+      "listingAge": "6年1月14天",
+      "brand": "HULISEN",
+      "price": "$12.99",
+      "margin": "$4.35\n41.44%",
+      "weight": "0.28 kg",
+      "ratings": "656",
+      "subRank": "1",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0CYTDMSVN",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "5",
+      "sellerCount": "1",
+      "childAsins": [
+        "B08GPG1SC5"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B08GPG1SC5",
+          "pasin": "B0CYTDMSVN",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+          ],
+          "sales": "4,736",
+          "revenue": "$61,520.64",
+          "salesCellText": "4,736",
+          "revenueCellText": "$61,520.64",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 1082,
+          "title": "HULISEN Stainless Steel Round Cookie Biscuit Cutter Set, 11 Circle Donut Doughnut Cutter, Baking Rin",
+          "listingDate": "2020-05-06",
+          "listingAge": "6年1月14天",
+          "brand": "HULISEN",
+          "price": "$12.99",
+          "margin": "$4.35\n41.44%",
+          "weight": "0.28 kg",
+          "ratings": "656",
+          "subRank": "1"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 4736,
+      "revenueNumAggregated": 61520.6,
+      "ratingsNumAggregated": 656,
+      "aggregatedMetricAsins": [
+        "B08GPG1SC5"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B08GPG1SC5",
+          "value": 656
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B08BWL2TR5",
+      "pasin": "B08BWL2TR5",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+      ],
+      "sales": "3,696",
+      "revenue": "$31,379.04",
+      "salesCellText": "3,696\n-7.55%",
+      "revenueCellText": "$31,379.04\n-7.55%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 2388,
+      "title": "12 Pieces Round Cookie Biscuit Cutter Set,Graduated Circle Pastry Cutters,18/8 Stainless Steel Cooki",
+      "listingDate": "2020-06-26",
+      "listingAge": "5年11月25天",
+      "brand": "Bukuwa",
+      "price": "$8.49",
+      "margin": "$3.24\n46.82%",
+      "weight": "0.23 kg",
+      "ratings": "6,131",
+      "subRank": "2",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B08BWL2TR5",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B08BWL2TR5"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B08BWL2TR5",
+          "pasin": "B08BWL2TR5",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+          ],
+          "sales": "3,696",
+          "revenue": "$31,379.04",
+          "salesCellText": "3,696\n-7.55%",
+          "revenueCellText": "$31,379.04\n-7.55%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 2388,
+          "title": "12 Pieces Round Cookie Biscuit Cutter Set,Graduated Circle Pastry Cutters,18/8 Stainless Steel Cooki",
+          "listingDate": "2020-06-26",
+          "listingAge": "5年11月25天",
+          "brand": "Bukuwa",
+          "price": "$8.49",
+          "margin": "$3.24\n46.82%",
+          "weight": "0.23 kg",
+          "ratings": "6,131",
+          "subRank": "2"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 3696,
+      "revenueNumAggregated": 31379,
+      "ratingsNumAggregated": 6131,
+      "aggregatedMetricAsins": [
+        "B08BWL2TR5"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B08BWL2TR5",
+          "value": 6131
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B08TMJRFGW",
+      "pasin": "B0BQ6VLZR7",
+      "category": "Kitchen & Dining > Bakeware > Candy Making Supplies > Chocolate Molds",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Candy Making Supplies > Chocolate Molds"
+      ],
+      "sales": "3,360",
+      "revenue": "$30,206.4",
+      "salesCellText": "3,360\n-15.96%",
+      "revenueCellText": "$30,206.4\n-15.96%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 2651,
+      "title": "Lerykin Small 15-Cavity Semi Sphere Silicone Molds Non-Stick,2 Packs Half Sphere Silicone Baking Mol",
+      "listingDate": "2021-01-21",
+      "listingAge": "5年4月30天",
+      "brand": "Lerykin",
+      "price": "$8.99",
+      "margin": "$3.43\n46.83%",
+      "weight": "0.16 kg",
+      "ratings": "1,950",
+      "subRank": "3",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0BQ6VLZR7",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "9",
+      "sellerCount": "1",
+      "childAsins": [
+        "B08TMJRFGW"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Candy Making Supplies > Chocolate Molds",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B08TMJRFGW",
+          "pasin": "B0BQ6VLZR7",
+          "category": "Kitchen & Dining > Bakeware > Candy Making Supplies > Chocolate Molds",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Candy Making Supplies > Chocolate Molds"
+          ],
+          "sales": "3,360",
+          "revenue": "$30,206.4",
+          "salesCellText": "3,360\n-15.96%",
+          "revenueCellText": "$30,206.4\n-15.96%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 2651,
+          "title": "Lerykin Small 15-Cavity Semi Sphere Silicone Molds Non-Stick,2 Packs Half Sphere Silicone Baking Mol",
+          "listingDate": "2021-01-21",
+          "listingAge": "5年4月30天",
+          "brand": "Lerykin",
+          "price": "$8.99",
+          "margin": "$3.43\n46.83%",
+          "weight": "0.16 kg",
+          "ratings": "1,950",
+          "subRank": "3"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 3360,
+      "revenueNumAggregated": 30206.4,
+      "ratingsNumAggregated": 1950,
+      "aggregatedMetricAsins": [
+        "B08TMJRFGW"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B08TMJRFGW",
+          "value": 1950
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B0D6V8J4KP",
+      "pasin": "B0DYN99DVF",
+      "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+      "categories": [
+        "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+        "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "Kitchen & Dining > Cookware > Cookware Accessories",
+        "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+      ],
+      "sales": "2,061",
+      "revenue": "$26,772.39",
+      "salesCellText": "2,061\n+28.41%",
+      "revenueCellText": "$26,772.39\n+28.41%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 4692,
+      "title": "3.5\" Egg Rings Set of 4 with Silicone Handle, Large Ring for Frying Eggs, Round Mold for English Muf",
+      "listingDate": "2024-06-12",
+      "listingAge": "2年0月8天",
+      "brand": "HLMOptimo",
+      "price": "$12.99",
+      "margin": "$4.35\n51.5%",
+      "weight": "0.28 kg",
+      "ratings": "464",
+      "subRank": "--",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0DYN99DVF",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0D6V8J4KP"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Cookware > Cookware Accessories",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0D6V8J4KP",
+          "pasin": "B0DYN99DVF",
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+          "categories": [
+            "Home & Kitchen > Kitchen & Dining > Cookware > Cookware Accessories",
+            "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+            "Kitchen & Dining > Cookware > Cookware Accessories",
+            "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+          ],
+          "sales": "2,061",
+          "revenue": "$26,772.39",
+          "salesCellText": "2,061\n+28.41%",
+          "revenueCellText": "$26,772.39\n+28.41%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 4692,
+          "title": "3.5\" Egg Rings Set of 4 with Silicone Handle, Large Ring for Frying Eggs, Round Mold for English Muf",
+          "listingDate": "2024-06-12",
+          "listingAge": "2年0月8天",
+          "brand": "HLMOptimo",
+          "price": "$12.99",
+          "margin": "$4.35\n51.5%",
+          "weight": "0.28 kg",
+          "ratings": "464",
+          "subRank": "--"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 2061,
+      "revenueNumAggregated": 26772.4,
+      "ratingsNumAggregated": 464,
+      "aggregatedMetricAsins": [
+        "B0D6V8J4KP"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0D6V8J4KP",
+          "value": 464
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B0CPWBG2B5",
+      "pasin": "B0CPWQ6TL1",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+      ],
+      "sales": "2,058",
+      "revenue": "--",
+      "salesCellText": "2,058\n+56.62%",
+      "revenueCellText": "--",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 4548,
+      "title": "ALLTOP Circle Biscuit Cutter Set –Stainless Steel Baking Supplies for Effortless Round Cookie Shapin",
+      "listingDate": "2023-12-10",
+      "listingAge": "2年6月10天",
+      "brand": "ALLTOP",
+      "price": "--",
+      "margin": "$3.01\n34.72%",
+      "weight": "--",
+      "ratings": "0",
+      "subRank": "9",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0CPWQ6TL1",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0CPWBG2B5"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0CPWBG2B5",
+          "pasin": "B0CPWQ6TL1",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+          ],
+          "sales": "2,058",
+          "revenue": "--",
+          "salesCellText": "2,058\n+56.62%",
+          "revenueCellText": "--",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 4548,
+          "title": "ALLTOP Circle Biscuit Cutter Set –Stainless Steel Baking Supplies for Effortless Round Cookie Shapin",
+          "listingDate": "2023-12-10",
+          "listingAge": "2年6月10天",
+          "brand": "ALLTOP",
+          "price": "--",
+          "margin": "$3.01\n34.72%",
+          "weight": "--",
+          "ratings": "--",
+          "subRank": "9"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 2058,
+      "revenueNumAggregated": 0,
+      "ratingsNumAggregated": 0,
+      "aggregatedMetricAsins": [
+        "B0CPWBG2B5"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "sales-summed-children-missing-revenue",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "representative-and-child-revenue-missing-or-zero",
+      "ratingsMetricSource": "missing",
+      "ratingsMetricReason": "no-positive-ratings",
+      "ratingsMetricValues": [],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B08D36NZP8",
+      "pasin": "B0DCW8RKMT",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+      ],
+      "sales": "1,095",
+      "revenue": "$13,129.05",
+      "salesCellText": "1,095\n+30.36%",
+      "revenueCellText": "$13,129.05\n+30.36%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 6347,
+      "title": "Cookie Cutter Set, 4 Pc. Kit, Measuring 2'', 3'', 4'' and 5'', Round Metal Baking Rings for Pastry, ",
+      "listingDate": "2020-07-16",
+      "listingAge": "5年11月4天",
+      "brand": "FUNUTTERS",
+      "price": "$11.99",
+      "margin": "$4.09",
+      "weight": "0.13 kg",
+      "ratings": "0",
+      "subRank": "22",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0DCW8RKMT",
+      "sellerType": "三方卖家  FBA  美国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B08D36NZP8"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B08D36NZP8",
+          "pasin": "B0DCW8RKMT",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+          ],
+          "sales": "1,095",
+          "revenue": "$13,129.05",
+          "salesCellText": "1,095\n+30.36%",
+          "revenueCellText": "$13,129.05\n+30.36%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 6347,
+          "title": "Cookie Cutter Set, 4 Pc. Kit, Measuring 2'', 3'', 4'' and 5'', Round Metal Baking Rings for Pastry, ",
+          "listingDate": "2020-07-16",
+          "listingAge": "5年11月4天",
+          "brand": "FUNUTTERS",
+          "price": "$11.99",
+          "margin": "$4.09",
+          "weight": "0.13 kg",
+          "ratings": "--",
+          "subRank": "22"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 1095,
+      "revenueNumAggregated": 13129.1,
+      "ratingsNumAggregated": 0,
+      "aggregatedMetricAsins": [
+        "B08D36NZP8"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "missing",
+      "ratingsMetricReason": "no-positive-ratings",
+      "ratingsMetricValues": [],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B0CFV6DT27",
+      "pasin": "B0CFV6DT27",
+      "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+      "categories": [
+        "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+        "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+        "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+      ],
+      "sales": "930",
+      "revenue": "$18,590.7",
+      "salesCellText": "930\n+18.02%",
+      "revenueCellText": "$18,590.7\n+18.02%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 9343,
+      "title": "Silicone Fried Egg Cooker Rings Set,Nonstick,Easy to Use&Clean, 4-pack, Round Egg Mold for Cooking P",
+      "listingDate": "2023-08-16",
+      "listingAge": "2年10月4天",
+      "brand": "GAGAQI",
+      "price": "$19.99",
+      "margin": "$4.09",
+      "weight": "0.16 kg",
+      "ratings": "469",
+      "subRank": "--",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0CFV6DT27",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0CFV6DT27"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+          "count": 1
+        },
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0CFV6DT27",
+          "pasin": "B0CFV6DT27",
+          "category": "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+          "categories": [
+            "Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+            "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Specialty Tools & Gadgets",
+            "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+          ],
+          "sales": "930",
+          "revenue": "$18,590.7",
+          "salesCellText": "930\n+18.02%",
+          "revenueCellText": "$18,590.7\n+18.02%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 9343,
+          "title": "Silicone Fried Egg Cooker Rings Set,Nonstick,Easy to Use&Clean, 4-pack, Round Egg Mold for Cooking P",
+          "listingDate": "2023-08-16",
+          "listingAge": "2年10月4天",
+          "brand": "GAGAQI",
+          "price": "$19.99",
+          "margin": "$4.09",
+          "weight": "0.16 kg",
+          "ratings": "469",
+          "subRank": "--"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 930,
+      "revenueNumAggregated": 18590.7,
+      "ratingsNumAggregated": 469,
+      "aggregatedMetricAsins": [
+        "B0CFV6DT27"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0CFV6DT27",
+          "value": 469
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B0C9GM6DK7",
+      "pasin": "B0CF8BCRLR",
+      "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+      "categories": [
+        "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+        "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+      ],
+      "sales": "810",
+      "revenue": "$16,191.9",
+      "salesCellText": "810\n+80%",
+      "revenueCellText": "$16,191.9\n+80%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 11562,
+      "title": "Patelai 6 Pcs Professional Egg Ring Pancake Ring Set Stainless Steel Fried Egg Molds Griddle Pancake",
+      "listingDate": "2023-07-28",
+      "listingAge": "2年10月23天",
+      "brand": "Patelai",
+      "price": "$19.99",
+      "margin": "$5.22\n58.88%",
+      "weight": "0.54 kg",
+      "ratings": "740",
+      "subRank": "--",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0CF8BCRLR",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B0C9GM6DK7"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        },
+        {
+          "category": "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0C9GM6DK7",
+          "pasin": "B0CF8BCRLR",
+          "category": "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+          "categories": [
+            "Home & Kitchen > Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers",
+            "Kitchen & Dining > Cookware > Specialty Cookware > Egg Poachers"
+          ],
+          "sales": "810",
+          "revenue": "$16,191.9",
+          "salesCellText": "810\n+80%",
+          "revenueCellText": "$16,191.9\n+80%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 11562,
+          "title": "Patelai 6 Pcs Professional Egg Ring Pancake Ring Set Stainless Steel Fried Egg Molds Griddle Pancake",
+          "listingDate": "2023-07-28",
+          "listingAge": "2年10月23天",
+          "brand": "Patelai",
+          "price": "$19.99",
+          "margin": "$5.22\n58.88%",
+          "weight": "0.54 kg",
+          "ratings": "740",
+          "subRank": "--"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 810,
+      "revenueNumAggregated": 16191.9,
+      "ratingsNumAggregated": 740,
+      "aggregatedMetricAsins": [
+        "B0C9GM6DK7"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0C9GM6DK7",
+          "value": 740
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B08B4ZQDCG",
+      "pasin": "B08B4ZQDCG",
+      "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Tool & Gadget Sets",
+      "categories": [
+        "Kitchen & Dining > Kitchen Utensils & Gadgets > Tool & Gadget Sets"
+      ],
+      "sales": "505",
+      "revenue": "$5,024.75",
+      "salesCellText": "505\n-5.25%",
+      "revenueCellText": "$5,024.75\n-5.25%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 16586,
+      "title": "FUNUTTERS Egg Rings, 3.5'', Nonstick, Professional and Large, Stainless Steel Omelet/Egg Rings For F",
+      "listingDate": "2020-08-25",
+      "listingAge": "5年9月26天",
+      "brand": "FUNUTTERS",
+      "price": "$9.95",
+      "margin": "$3.24\n52.46%",
+      "weight": "0.20 kg",
+      "ratings": "3,649",
+      "subRank": "28",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B08B4ZQDCG",
+      "sellerType": "三方卖家  FBA  美国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B08B4ZQDCG"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Tool & Gadget Sets",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B08B4ZQDCG",
+          "pasin": "B08B4ZQDCG",
+          "category": "Kitchen & Dining > Kitchen Utensils & Gadgets > Tool & Gadget Sets",
+          "categories": [
+            "Kitchen & Dining > Kitchen Utensils & Gadgets > Tool & Gadget Sets"
+          ],
+          "sales": "505",
+          "revenue": "$5,024.75",
+          "salesCellText": "505\n-5.25%",
+          "revenueCellText": "$5,024.75\n-5.25%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 16586,
+          "title": "FUNUTTERS Egg Rings, 3.5'', Nonstick, Professional and Large, Stainless Steel Omelet/Egg Rings For F",
+          "listingDate": "2020-08-25",
+          "listingAge": "5年9月26天",
+          "brand": "FUNUTTERS",
+          "price": "$9.95",
+          "margin": "$3.24\n52.46%",
+          "weight": "0.20 kg",
+          "ratings": "3,649",
+          "subRank": "28"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 505,
+      "revenueNumAggregated": 5024.8,
+      "ratingsNumAggregated": 3649,
+      "aggregatedMetricAsins": [
+        "B08B4ZQDCG"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B08B4ZQDCG",
+          "value": 3649
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B071GLNZFS",
+      "pasin": "B071GLNZFS",
+      "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+      "categories": [
+        "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+      ],
+      "sales": "500",
+      "revenue": "$6,425",
+      "salesCellText": "500",
+      "revenueCellText": "$6,425",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 18192,
+      "title": "Round Cutters in Graduated Sizes, 304 Stainless Steel, 12 Pc Set (Plain Edge)",
+      "listingDate": "2017-06-11",
+      "listingAge": "9年0月9天",
+      "brand": "kayaso",
+      "price": "$12.85",
+      "margin": "$4.2\n52.94%",
+      "weight": "0.27 kg",
+      "ratings": "2,413",
+      "subRank": "82",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B071GLNZFS",
+      "sellerType": "三方卖家  FBA  中国",
+      "variants": "1",
+      "sellerCount": "1",
+      "childAsins": [
+        "B071GLNZFS"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B071GLNZFS",
+          "pasin": "B071GLNZFS",
+          "category": "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters",
+          "categories": [
+            "Kitchen & Dining > Bakeware > Baking Tools & Accessories > Cookie Cutters"
+          ],
+          "sales": "500",
+          "revenue": "$6,425",
+          "salesCellText": "500",
+          "revenueCellText": "$6,425",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 18192,
+          "title": "Round Cutters in Graduated Sizes, 304 Stainless Steel, 12 Pc Set (Plain Edge)",
+          "listingDate": "2017-06-11",
+          "listingAge": "9年0月9天",
+          "brand": "kayaso",
+          "price": "$12.85",
+          "margin": "$4.2\n52.94%",
+          "weight": "0.27 kg",
+          "ratings": "2,413",
+          "subRank": "82"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 500,
+      "revenueNumAggregated": 6425,
+      "ratingsNumAggregated": 2413,
+      "aggregatedMetricAsins": [
+        "B071GLNZFS"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B071GLNZFS",
+          "value": 2413
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    },
+    {
+      "asin": "B0854SQHQ9",
+      "pasin": "B0BVS9Q9SK",
+      "category": "Kitchen & Dining > Cookware > Griddles",
+      "categories": [
+        "Kitchen & Dining > Cookware > Griddles"
+      ],
+      "sales": "426",
+      "revenue": "$3,403.74",
+      "salesCellText": "426\n+31.89%",
+      "revenueCellText": "$3,403.74\n+5.48%",
+      "childSales": "",
+      "childRevenue": "",
+      "bsr": 14317,
+      "title": "Eggs Rings, 4 Pack Stainless Steel Egg Cooking Rings, Pancake Mold for frying Eggs and Omelet",
+      "listingDate": "2020-02-25",
+      "listingAge": "6年3月26天",
+      "brand": "Laxinis World",
+      "price": "$7.99",
+      "margin": "$3.13\n53.65%",
+      "weight": "0.22 kg",
+      "ratings": "10,752",
+      "subRank": "31",
+      "sourceKeyword": "crumpet rings",
+      "parentAsin": "B0BVS9Q9SK",
+      "sellerType": "三方卖家  FBA  美国",
+      "variants": "1",
+      "sellerCount": "3",
+      "childAsins": [
+        "B0854SQHQ9"
+      ],
+      "childAsinCount": 1,
+      "categoryCounts": [
+        {
+          "category": "Kitchen & Dining > Cookware > Griddles",
+          "count": 1
+        }
+      ],
+      "variantRows": [
+        {
+          "asin": "B0854SQHQ9",
+          "pasin": "B0BVS9Q9SK",
+          "category": "Kitchen & Dining > Cookware > Griddles",
+          "categories": [
+            "Kitchen & Dining > Cookware > Griddles"
+          ],
+          "sales": "426",
+          "revenue": "$3,403.74",
+          "salesCellText": "426\n+31.89%",
+          "revenueCellText": "$3,403.74\n+5.48%",
+          "childSales": "",
+          "childRevenue": "",
+          "bsr": 14317,
+          "title": "Eggs Rings, 4 Pack Stainless Steel Egg Cooking Rings, Pancake Mold for frying Eggs and Omelet",
+          "listingDate": "2020-02-25",
+          "listingAge": "6年3月26天",
+          "brand": "Laxinis World",
+          "price": "$7.99",
+          "margin": "$3.13\n53.65%",
+          "weight": "0.22 kg",
+          "ratings": "10,752",
+          "subRank": "31"
+        }
+      ],
+      "sourceKeywords": [
+        "crumpet rings"
+      ],
+      "aggregatedFromVariants": false,
+      "variantRowCount": 1,
+      "salesNumAggregated": 426,
+      "revenueNumAggregated": 3403.7,
+      "ratingsNumAggregated": 10752,
+      "aggregatedMetricAsins": [
+        "B0854SQHQ9"
+      ],
+      "aggregatedMetricRowCount": 1,
+      "salesRevenueMetricSource": "representative-parent-row",
+      "salesMetricFallbackReason": "",
+      "revenueMetricFallbackReason": "",
+      "ratingsMetricSource": "single",
+      "ratingsMetricReason": "single-rating",
+      "ratingsMetricValues": [
+        {
+          "asin": "B0854SQHQ9",
+          "value": 10752
+        }
+      ],
+      "targetMatchedCategories": [],
+      "targetMatchedChildAsins": []
+    }
+  ],
+  "refilteredAt": "2026-06-20T10:10:54.878Z"
+}

@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
+const { activatePage } = require('./browser-page-utils');
 
 const OALUR_ASIN_SEARCH_URL = 'https://vip.oalur.com/insight/product/search?site=US';
 const OALUR_NAV_TIMEOUT_MS = 30000;
@@ -81,6 +82,7 @@ fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
 async function gotoOalurAsinSearch(page, asin) {
   try {
+    await activatePage(page);
     await page.goto(OALUR_ASIN_SEARCH_URL, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
   } catch (error) {
     if (String(error?.message || '').toLowerCase().includes('timeout')) {
@@ -269,6 +271,7 @@ async function navigateAndOpenTrends(page, asin) {
 
 async function extractDirect(browser, asin, index, total) {
   const page = await browser.newPage();
+  await activatePage(page);
   const state = { basicInfo: null, salesTrend: null, keepaTrend: null, bsrTrend: null };
 
   page.on('response', async response => {

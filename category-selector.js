@@ -66,9 +66,84 @@ function tokenSet(value) {
   return new Set(tokenize(value).map(stemToken));
 }
 
+function referenceCategoryMatchInfo(category, referenceCategories = []) {
+  const categoryNorm = normalizeCategoryPath(category);
+  if (!categoryNorm || !referenceCategories.length) {
+    return {
+      referenceCategoryMatch: false,
+      referenceScoreBoost: 0,
+      referenceCategoryMatchedBy: '',
+      referenceCategoryMatchType: '',
+      referenceCategoryMatchReason: ''
+    };
+  }
+
+  const categoryLeafNorm = categoryParts(category).slice(-1)[0] || '';
+  const categoryWords = tokenSet(categoryNorm);
+  let best = {
+    referenceCategoryMatch: false,
+    referenceScoreBoost: 0,
+    referenceCategoryMatchedBy: '',
+    referenceCategoryMatchType: '',
+    referenceCategoryMatchReason: ''
+  };
+
+  for (const rawReference of referenceCategories) {
+    const referenceNorm = normalizeCategoryPath(rawReference);
+    if (!referenceNorm) continue;
+    const referenceLeafNorm = categoryParts(referenceNorm).slice(-1)[0] || '';
+    const referenceWords = tokenSet(referenceNorm);
+    const sharedTokens = [...referenceWords].filter(token => categoryWords.has(token));
+    let candidate = null;
+
+    if (categoryNorm === referenceNorm) {
+      candidate = {
+        referenceScoreBoost: 130,
+        referenceCategoryMatchType: 'exact',
+        referenceCategoryMatchReason: 'reference category exact match'
+      };
+    } else if (categoryNorm.startsWith(`${referenceNorm} > `) || referenceNorm.startsWith(`${categoryNorm} > `)) {
+      candidate = {
+        referenceScoreBoost: 70,
+        referenceCategoryMatchType: 'path',
+        referenceCategoryMatchReason: 'reference category parent/child path match'
+      };
+    } else if (categoryLeafNorm && categoryLeafNorm === referenceLeafNorm && sharedTokens.length >= 2) {
+      candidate = {
+        referenceScoreBoost: 35,
+        referenceCategoryMatchType: 'leaf',
+        referenceCategoryMatchReason: 'reference category leaf and path tokens match'
+      };
+    }
+
+    if (candidate && candidate.referenceScoreBoost > best.referenceScoreBoost) {
+      best = {
+        referenceCategoryMatch: true,
+        referenceCategoryMatchedBy: rawReference,
+        ...candidate
+      };
+    }
+  }
+
+  return best;
+}
+
 function categoryLeaf(category) {
   const parts = String(category || '').split('>').map(s => s.trim()).filter(Boolean);
   return parts[parts.length - 1] || String(category || '');
+}
+
+function normalizeCategoryPath(category) {
+  return String(category || '')
+    .replace(/&amp;/gi, '&')
+    .split('>')
+    .map(part => part.trim().replace(/\s+/g, ' ').toLowerCase())
+    .filter(Boolean)
+    .join(' > ');
+}
+
+function categoryParts(category) {
+  return normalizeCategoryPath(category).split(' > ').filter(Boolean);
 }
 
 function isUnknownCategory(category) {
@@ -248,7 +323,43 @@ function listingMatchesKeywordIntent(item, keywords) {
   return titles.some(title => keywordList.some(keyword => titleMatchesKeywordIntent(title, keyword)));
 }
 
-function selectTargetCategories(products, keywords) {
+function hasTargetCategoryEvidence(detail) {
+  if (!detail.referenceCategoryMatch) return true;
+  if (detail.referenceCategoryMatchType === 'exact') {
+    return detail.baseScore >= 35 && (
+      detail.shapeHit ||
+      detail.titleAllRate >= 0.25 ||
+      detail.titleAnyRate >= 0.7
+    );
+  }
+  if (detail.referenceCategoryMatchType === 'path') {
+    return detail.baseScore >= 70 && (
+      detail.titleAllRate >= 0.3 ||
+      (detail.shapeHit && detail.contextMatch !== false)
+    );
+  }
+  return detail.baseScore >= 110;
+}
+
+function isReferenceConfirmedTarget(detail) {
+  return detail.referenceCategoryMatch &&
+    detail.referenceCategoryMatchType === 'exact' &&
+    hasTargetCategoryEvidence(detail);
+}
+
+function isTargetCategoryCandidate(detail) {
+  return (
+    detail.category &&
+    !isUnknownCategory(detail.category) &&
+    (!detail.functionalEquivalent || isReferenceConfirmedTarget(detail)) &&
+    hasTargetCategoryEvidence(detail)
+  );
+}
+
+function selectTargetCategories(products, keywords, options = {}) {
+  const referenceCategories = Array.isArray(options.referenceCategories) ? options.referenceCategories.filter(Boolean) : [];
+  const referenceTargetCategories = [...new Set(referenceCategories.map(category => String(category || '').trim()).filter(Boolean))];
+  const referenceTargetSet = new Set(referenceTargetCategories);
   const grouped = new Map();
   for (const item of products) {
     const category = item.category || '未识别';
@@ -264,12 +375,15 @@ function selectTargetCategories(products, keywords) {
       ...scoreCategoryForKeyword(category, items, keyword)
     }));
     const best = perKeyword.reduce((a, b) => (b.score > a.score ? b : a), perKeyword[0]);
+    const referenceMatch = referenceCategoryMatchInfo(category, referenceCategories);
+    const score = Math.round(best.score * 10) / 10;
     return {
       category,
       count: items.length,
-      score: best.score,
+      score,
+      baseScore: best.score,
       selectedKeyword: best.keyword,
-      reason: best.reason,
+      reason: [best.reason, referenceMatch.referenceCategoryMatchReason].filter(Boolean).join('; '),
       tokenHits: best.tokenHits,
       shapeHit: best.shapeHit,
       modifierHits: best.modifierHits,
@@ -283,13 +397,14 @@ function selectTargetCategories(products, keywords) {
       functionalEquivalent: best.functionalEquivalent,
       titleAllRate: best.titleAllRate,
       titleAnyRate: best.titleAnyRate,
+      ...referenceMatch,
+      referenceScoreBoost: 0,
       perKeyword
     };
   }).sort((a, b) => b.score - a.score || b.count - a.count);
 
   const selected = details.filter(d => (
-    !isUnknownCategory(d.category) &&
-    !d.functionalEquivalent &&
+    isTargetCategoryCandidate(d) &&
     (
       (d.score >= 110 && (d.count >= 3 || d.score >= 180)) ||
       (d.shapeHit && d.contextMatch !== false && d.count >= 20 && d.titleAllRate >= 0.5)
@@ -321,6 +436,7 @@ function selectTargetCategories(products, keywords) {
     d.category &&
     !isUnknownCategory(d.category) &&
     !selected.some(item => item.category === d.category) &&
+    !referenceTargetSet.has(d.category) &&
     d.count >= 5 &&
     d.titleAllRate >= 0.35 &&
     d.titleAnyRate >= 0.85 &&
@@ -335,11 +451,11 @@ function selectTargetCategories(products, keywords) {
 
   const fallback = selected.length
     ? selected
-    : (broadTitleIntentSelected.length
-      ? broadTitleIntentSelected.slice(0, 5)
-      : details.filter(d => !isUnknownCategory(d.category)).slice(0, 1));
+    : (broadTitleIntentSelected.filter(isTargetCategoryCandidate).length
+      ? broadTitleIntentSelected.filter(isTargetCategoryCandidate).slice(0, 5)
+      : details.filter(isTargetCategoryCandidate).slice(0, 1));
   const expandedFallback = selected.length ? fallback : (() => {
-    const validDetails = details.filter(d => !isUnknownCategory(d.category));
+    const validDetails = details.filter(isTargetCategoryCandidate);
     const top = validDetails[0];
     if (!top) return fallback;
     const closeMatches = validDetails.filter(d => (
@@ -349,9 +465,16 @@ function selectTargetCategories(products, keywords) {
     )).slice(0, 5);
     return closeMatches.length ? closeMatches : fallback;
   })();
-  const selectedCategories = expandedFallback
-    .filter(d => !d.functionalEquivalent)
-    .map(d => d.category);
+  const selectedCategories = referenceTargetCategories.length
+    ? [
+      ...referenceTargetCategories,
+      ...expandedFallback
+        .filter(d => !d.functionalEquivalent || isReferenceConfirmedTarget(d))
+        .map(d => d.category)
+    ].filter((category, index, arr) => category && arr.indexOf(category) === index)
+    : expandedFallback
+      .filter(d => !d.functionalEquivalent || isReferenceConfirmedTarget(d))
+      .map(d => d.category);
   const selectedSet = new Set(selectedCategories);
 
   return {
@@ -361,6 +484,7 @@ function selectTargetCategories(products, keywords) {
       category: d.category,
       count: d.count,
       score: d.score,
+      baseScore: d.baseScore,
       selected: selectedSet.has(d.category),
       selectedKeyword: d.selectedKeyword,
       reason: d.reason,
@@ -377,7 +501,12 @@ function selectTargetCategories(products, keywords) {
       functionalEquivalent: d.functionalEquivalent,
       titleIntentRescueCandidate: titleIntentRescueSet.has(d.category),
       titleAllRate: d.titleAllRate,
-      titleAnyRate: d.titleAnyRate
+      titleAnyRate: d.titleAnyRate,
+      referenceCategoryMatch: d.referenceCategoryMatch,
+      referenceScoreBoost: d.referenceScoreBoost,
+      referenceCategoryMatchedBy: d.referenceCategoryMatchedBy,
+      referenceCategoryMatchType: d.referenceCategoryMatchType,
+      referenceCategoryMatchReason: d.referenceCategoryMatchReason
     }))
   };
 }
@@ -388,6 +517,7 @@ module.exports = {
   tokenize,
   keywordTokens,
   categoryContextInfo,
+  referenceCategoryMatchInfo,
   titleMatchesKeywordIntent,
   listingMatchesKeywordIntent
 };

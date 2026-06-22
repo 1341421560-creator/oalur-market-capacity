@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-06-20T08:06:29.019Z",
+  "model": null,
+  "usedOpenAI": false,
+  "filteringImpact": "none",
+  "warning": "AI keyword intent analysis is advisory only. It is not used by target category selection or product filtering.",
+  "keywords": [
+    {
+      "keyword": "fruit",
+      "normalizedKeyword": "fruit",
+      "source": "local-fallback",
+      "confidence": "low",
+      "shape": [
+        "fruit"
+      ],
+      "intent": [],
+      "equivalent": [],
+      "nearButRisky": [],
+      "exclude": [],
+      "notes": [
+        "No usable OpenAI keyword intent response was available; this is a local fallback based on current built-in token aliases.",
+        "This analysis is advisory only and is not used by product filtering."
+      ]
+    }
+  ]
+}

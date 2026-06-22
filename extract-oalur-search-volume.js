@@ -16,6 +16,7 @@
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
+const { activatePage } = require('./browser-page-utils');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -102,6 +103,7 @@ async function extractVolume(page, kw) {
 
   // ===== Step 1: 导航 =====
   console.log('🌐 导航至 Oalur 关键词研究页面...');
+  await activatePage(page);
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await new Promise(r => setTimeout(r, 3000));
 

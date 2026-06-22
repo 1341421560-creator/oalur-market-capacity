@@ -2,6 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const { selectTargetCategories, listingMatchesKeywordIntent, titleMatchesKeywordIntent } = require('./category-selector');
 const {
+  buildReferenceCategorySelectionSummary,
+  normalizeReferenceCategories,
+  parseReferenceCategoryArgs
+} = require('./reference-categories');
+const {
   aggregateParentListings,
   applyTargetCategoryMatch,
   listingMatchesTargetCategories
@@ -10,6 +15,7 @@ const { buildRescuePriceGuard, rescuePriceMatches } = require('./rescue-price-gu
 
 const inputPath = process.argv[2];
 const outputPath = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : inputPath;
+const referenceCategoriesFromArgs = parseReferenceCategoryArgs(process.argv.slice(2));
 
 if (!inputPath) {
   console.error('Usage: node refilter-data.js <market-data.json> [output.json]');
@@ -73,10 +79,17 @@ function reapplyFilter(marketData) {
   const keywords = Array.isArray(marketData.keywords) && marketData.keywords.length
     ? marketData.keywords
     : [marketData.keyword].filter(Boolean);
+  const referenceCategories = normalizeReferenceCategories(
+    referenceCategoriesFromArgs.length ? referenceCategoriesFromArgs : (marketData.referenceCategories || [])
+  );
   const parents = allParentListings(marketData);
   const categorySelectionSource = categorySelectionRows(parents);
-  const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords);
+  const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
   const targetCategories = categorySelectionResult.targetCategories;
+  const referenceCategorySelection = buildReferenceCategorySelectionSummary(
+    referenceCategories,
+    categorySelectionResult.categorySelection
+  );
   const targetCategorySet = new Set(targetCategories);
   const equivalentCategorySet = new Set(
     categorySelectionResult.categorySelection
@@ -137,6 +150,8 @@ function reapplyFilter(marketData) {
     targetCategory: targetCategories[0] || '',
     targetCategories,
     equivalentCandidateCategories: [...equivalentCategorySet],
+    referenceCategories,
+    referenceCategorySelection,
     categorySelection: categorySelectionResult.categorySelection,
     rescuePriceGuard,
     categoryDistribution,

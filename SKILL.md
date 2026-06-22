@@ -23,6 +23,7 @@
 ## 输入
 - **产品关键词**：亚马逊搜索词、长尾词，如 "Biscuit Cutter"、"Silicone Spatula" 等
 - **多关键词**：英文逗号分隔，如 "Cookie Cutter,Biscuit Cutter"，用于合并同品类不同关键词的数据
+- **参考类目（可选）**：只参与初始目标类目/待救回类目选择，不直接救回 ASIN，不跳过标题意图或价格守卫，不参与后续评分。CLI 使用 `--reference-categories "类目1||类目2"`；文件使用 `--reference-categories-file output/任务/reference-categories.txt`，每行一个类目。
 
 ## 多关键词分析流程
 
@@ -36,7 +37,7 @@ node skills/oalur-market-capacity/extract-data.js "Cookie Cutter,Biscuit Cutter"
 脚本会自动执行：
 1. `Cookie Cutter` 独立抓取到 `output/日期-Cookie-Cutter-Biscuit-Cutter/data/Cookie-Cutter-data.json`
 2. `Biscuit Cutter` 独立抓取到 `output/日期-Cookie-Cutter-Biscuit-Cutter/data/Biscuit-Cutter-data.json`
-3. 调用 `merge-data.js` 合并为 `merged-data.json`
+3. 调用 `merge-data.js --output` 合并为 `merged-data.json`
 
 ### 手动方式：独立抓取 + merge-data.js 合并
 ```bash
@@ -44,12 +45,14 @@ node skills/oalur-market-capacity/extract-data.js "Cookie Cutter,Biscuit Cutter"
 node skills/oalur-market-capacity/extract-data.js "Cookie Cutter" 10000 output/日期-Cookie-Cutter/data/cookie-data.json
 node skills/oalur-market-capacity/extract-data.js "Biscuit Cutter" 10000 output/日期-Biscuit-Cutter/data/biscuit-data.json
 
-# 合并去重（ASIN去重 + 父体 Listing 聚合 + 类目/标题意图过滤）
-node skills/oalur-market-capacity/merge-data.js output/日期-Cookie-Cutter/data/cookie-data.json output/日期-Biscuit-Cutter/data/biscuit-data.json output/日期-merged-data/data/merged-data.json
+# 合并去重（ASIN去重 + 父体 Listing 聚合 + 类目/标题意图过滤 + 价格守卫）
+node skills/oalur-market-capacity/merge-data.js output/日期-Cookie-Cutter/data/cookie-data.json output/日期-Biscuit-Cutter/data/biscuit-data.json --output output/日期-merged-data/data/merged-data.json
 
 # 生成报告
 node skills/oalur-market-capacity/generate-report.js output/日期-merged-data/data/merged-data.json
 ```
+
+`merge-data.js` 合并时会重新执行目标类目选择、功能等价候选类目救回、标题意图判断和救回价格守卫，过滤口径必须与 `extract-data.js` / `refilter-data.js` 保持一致。输出路径优先使用 `--output` 或 `--out` 指定；如果省略输出路径，脚本会自动写到 `output/日期-merged-data/data/merged-data.json`，不会把已存在的最后一个输入文件当输出覆盖。旧式“最后一个不存在的路径作为输出文件”仅作为兼容模式，不建议继续使用。脚本读取 JSON 时会兼容 UTF-8 BOM。
 
 ### 不推荐方式：单进程连抓
 旧版本支持在同一页面会话内连续抓取多个关键词，但 Oalur 页面状态可能残留，导致后续关键词结果与单独搜索不一致。当前默认不再使用该方式。
@@ -139,8 +142,52 @@ node skills/oalur-market-capacity/extract-data.js "关键词" BSR上限 输出�
 node skills/oalur-market-capacity/extract-data.js "Biscuit Cutter" 10000 output/日期-Biscuit-Cutter/data/biscuit-cutter-data.json
 ```
 
+参考类目示例：
+```bash
+node skills/oalur-market-capacity/extract-data.js "dishwasher cleaner tablets" 20000 output/日期-Dishwasher-Cleaner-Tablets/data/data.json --reference-categories "Home & Kitchen > Cleaning Supplies > Household Cleaning > Kitchen Cleaners > Dishwasher & Garbage Disposal Cleaners > Dishwasher Cleaners||Health & Household > House Supplies > Dishwashing > Dishwasher Cleaners||Health & Household > House Supplies > Household Cleaning > Kitchen Cleaners > Dishwasher & Garbage Disposal Cleaners > Dishwasher Cleaners"
+```
+
 
 脚本自动完成：关键词输入、BSR 设置、勾选查看其他变体、翻页提取、ASIN 去重、父体 Listing 聚合、类目/标题意图过滤。
+
+#### 参考类目输入
+
+参考类目只作用于最初的类目筛选模块：
+
+1. 如果输入参考类目，`selectTargetCategories` 会对候选类目做参考匹配加权，匹配类型、加权分和命中来源写入 `categorySelection` / `referenceCategorySelection`。
+2. 参考类目不是白名单，不会直接把 ASIN 救回，也不会跳过标题意图或价格守卫。
+3. 其它类目仍按原评分规则选择目标类目和救回候选类目；参考类目只影响初始类目选择阶段。
+4. 最终 `targetCategories` 仍由评分门槛、类目证据和参考类目加权共同决定，不是简单把参考类目并入结果。
+5. 非目标类目如果进入 `equivalentCandidateCategories`，后续必须通过标题意图救回；标题意图救回仍受价格守卫约束。
+6. 只有产品自身类目命中 `targetCategories` 时才直进；其它类目仍需走救回流程。
+7. 参考类目不进入利润、竞争、新品、季节性或最终评分。
+8. 多关键词、历史新品抓取、`merge-data.js` 和 `refilter-data.js` 都支持同样参数，保证初始类目筛选口径一致。
+
+#### JSON 批量顺序执行
+
+如果输入文件是 `keywords-agent-same.json` 这类结构，使用批量入口顺序执行：
+
+```bash
+node skills/oalur-market-capacity/run-keyword-json-batch.js output/来源/data/keywords-agent-same.json --bsr 20000 --start 2 --limit 1
+```
+
+批量脚本读取顶层 `products[]`，每个产品使用：
+- `keyword` 作为市场分析关键词。
+- `[category, ...categories]` 合并去重后作为参考类目。
+- `--start` 使用 1-based 序号，`--start 2 --limit 1` 表示只跑第二个产品。
+- 默认 BSR 为 `20000`；如需统一调整，传 `--bsr 数值`。
+- 默认开启断点续跑。脚本会在批次目录写入 `batch-progress.json`，记录当前产品序号、当前步骤、已完成/失败状态。
+- 如果命令超时或中断，重新执行同一命令会跳过已完成产品，并从未完成产品的缺失步骤继续。
+- 如果跨日期继续旧批次，传 `--batch-root output/YYYY-MM-DD-automated-market` 指向原批次目录。
+- 如需忽略进度并重跑选中范围，传 `--no-resume`。
+
+输出统一放在批次目录：
+
+```text
+output/YYYY-MM-DD-automated-market/YYYY-MM-DD-002-Crumpet-Rings-20000/
+```
+
+单品目录内继续使用现有 `data/`、`reports/`、`excel/` 结构。批量脚本按顺序串行执行，不并发，避免 Edge/Oalur 页面状态互相污染。
 
 #### 未识别类目补查
 
@@ -225,6 +272,9 @@ node skills/oalur-market-capacity/extract-seasonality.js "关键词" output/日�
 
 脚本自动完成：
 1. **Google Trends 5年搜索趋势**：从 Google Trends 网页提取公开数据（不需要登录，不截图）
+   - 如果原始长尾词 Google Trends 数据过于稀疏（例如 5 年周数据非零点 `<24` 或非零率 `<15%`），不能直接用该数据判断季节性。
+   - 此时允许本地 agent/本地规则从关键词中提取核心词后重试，例如 `fruit basket for kitchen counter` → `fruit basket`。
+   - 报告必须展示原始关键词、实际 Google Trends 查询词和降级原因；核心词只用于 Google Trends 季节性验证，不改变 Oalur 搜索词、类目过滤、产品过滤或评分的其他数据源。
 2. **Oalur 关键词月度趋势（36个月）**：从 Oalur 关键词研究页的 Pinia store 一次性提取 6 个数据集：
    - 搜索量趋势（searchesTrend）
    - 搜索排名趋势（searchesRankTrend）
@@ -312,10 +362,29 @@ node skills/oalur-market-capacity/generate-report.js output/日期-关键词/dat
 | 维度 | 数据源 | 计算方式 | 判定标准 |
 |---|---|---|---|
 | **Google 峰谷比** | Google Trends | 多年月均值的 max/min | ≥2 = 明显季节性, 1.5-2 = 温和季节性 |
-| **Oalur 峰谷比** | Oalur searchesTrend | 多年月均值的 max/min | ≥2.5 = 强季节性, 1.8-2.5 = 温和 |
-| **季节性得分** | Google + Oalur 综合 | Google 最高+50分, Oalur 最高+60分 | ≥60 = 强季节性, 30-59 = 弱季节性 |
+| **Oalur 站内季节性** | Oalur searchesTrend | 月均峰谷比 + 峰值/中位月 + Top2月占比 + 年度峰值重复 + 最近12月峰值 | 全部满足才算 Oalur 强信号 |
+| **季节性得分** | Google + Oalur + 老品ASIN 综合 | 三源证据等级 | 两类强信号 = 确认强季节性；一类强信号 = 疑似强季节性 |
 | **峰值月份** | Google + Oalur | 多峰值月份取交集 | 用于制定备货和广告计划 |
 | **ASIN 趋势验证** | 3 个老品 ASIN 月销量 | 观察每年同月的销量峰谷 | 确认季节性在真实销售数据中的体现 |
+
+Google Trends 口径补充：
+- Google Trends 原始数据是周级搜索兴趣，季节性判断必须先按月份聚合为多年月均值，再计算月均峰谷比；禁止直接用单周最高/最低点判断强季节性。
+- 原始长尾词数据过稀疏时，可以由本地 agent/本地规则提取核心词重试，但必须在报告中说明，不得静默替换。
+- 如果只有 Oalur 站内搜索量支持强季节性，而 Google Trends 或老品 ASIN 趋势没有第二类证据确认，只能标记为“疑似强季节性”。
+
+Oalur 站内强季节性信号必须同时满足：
+- 多年月均峰谷比 `>=2.5`。
+- 峰值月 / 中位月 `>=1.5`。
+- Top2 月搜索量占全年月均总量 `>=24%`。
+- 最近 3 个完整或近完整年份中，至少 2 年峰值出现在聚合峰值月或相邻月份。
+- 最近 12 个月峰值仍出现在聚合峰值月或相邻月份，且相对最近 12 个月中位数 `>=1.25x`。
+
+最终季节性分类：
+- `确认强季节性`：Google、Oalur、老品 ASIN 三类证据中至少两类为强信号。
+- `疑似强季节性`：只有一类强信号。
+- `弱季节性`：没有强信号，但至少两类有弱信号。
+- `疑似弱季节性`：只有一类弱信号。
+- `非季节性`：三类都没有明显季节性信号。
 
 ### 季节性报告包含的图表
 
@@ -383,12 +452,12 @@ TOP3 点击份额与转化份额必须按 `knowledge/amazon-selection-standard-v
 - `<12个月` 纯新父体销量承接 7 分：采用三因子保守口径，覆盖度 2 分 + 销量承接 3 分 + 销量质量 2 分。覆盖度按纯新父体占比评分：`>=15%` 得 2 分，`8%-15%` 得 1 分，`<8%` 但有样本得 0.5 分，无样本得 0 分。销量承接按纯新父体销量占比评分：`>=20%` 得 3 分，`10%-20%` 得 2 分，`5%-10%` 得 1 分，`<5%` 得 0 分。销量质量按纯新父体销量中位数 / 全市场销量中位数评分：`>=1` 得 2 分，`0.6-1` 得 1 分，`<0.6` 得 0 分。`<12个月` 窗口更宽，需要加入销量质量，但不能照搬 `<6个月` 的分散/可复制性口径，避免把已经跑了 8-11 个月的成熟新品过度奖励。
 - 毛利空间 20 分：销量加权毛利率 8 分 + 低毛利销量占比 5 分 + FBA/售价压力 3 分 + 价格带利润结构 4 分。销量加权毛利率评分：`>=45%` 得 8 分，`40%-45%` 得 6 分，`35%-40%` 得 4 分，`<35%` 得 0 分。低毛利销量占比指毛利率 `<35%` 产品销量 / 有毛利率样本总销量：`<10%` 得 5 分，`10%-25%` 得 3 分，`25%-40%` 得 1 分，`>=40%` 得 0 分。FBA/售价压力使用销量加权 FBA/售价：`<20%` 得 3 分，`20%-28%` 得 2 分，`28%-35%` 得 1 分，`>=35%` 得 0 分。价格带利润结构使用销量加权单件毛利额评分：`>=4美元` 得 4 分，`3-4美元` 得 3 分，`2-3美元` 得 1 分，`<2美元` 得 0 分；如果 `<$8` 低价带销量过半且该价格带单件毛利偏低，则该项封顶到 1-2 分。CPC/客单价只在广告成本模块计分，毛利空间中只作为利润侵蚀提醒，避免重复惩罚。有效成本率因当前数据不足，不参与评分，列为产品深化阶段补采项。
 - 广告成本 15 分：使用过滤后父体 Listing 销量前 30 样本的中位 CPC/客单价评分；`<5%` 得 15 分，`5%-8%` 得 12 分，`8%-12%` 得 8 分，`12%-15%` 得 3 分，`>=15%` 得 0 分。当前没有引入转化率模型，因此该指标按更保守阈值处理。广告成本会直接影响冷启动和利润侵蚀，必须独立计分。
-- 季节性/生命周期风险 15 分：季节性风险 6 分 + 搜索需求生命周期 6 分 + 老品 ASIN 生命周期 3 分。强节日性或强季节性必须由 Google Trends、Oalur 站内搜索量、老品 ASIN 销售/BSR 趋势中至少两类证据确认；证据不足只标记为疑似，不作为强扣分或一票否决。Google 峰值月必须是稳定峰值月：最高月相对中位月、次高月、最低月都有明显优势，否则显示“无稳定峰值月”。生命周期不能主要依赖抽样 ASIN，搜索需求趋势权重要高，老品 ASIN 只作为验证信号。
+- 季节性/生命周期风险 15 分：季节性风险 6 分 + 搜索需求生命周期 9 分；老品 ASIN 生命周期只作为验证信号，不进入最终评分。强节日性或强季节性必须由 Google Trends、Oalur 站内搜索量、老品 ASIN 销售/BSR 趋势中至少两类证据确认；证据不足只标记为疑似，不作为强扣分或一票否决。Google 峰值月必须是稳定峰值月：最高月相对中位月、次高月、最低月都有明显优势，否则显示“无稳定峰值月”。生命周期不能主要依赖抽样 ASIN，搜索需求趋势权重要高。
 
 生命周期评分标准：
 - 季节性风险满分 6 分：非强季节性 6 分；弱季节性 4 分；疑似强季节性但证据不足 3 分；强季节性 0-2 分。
-- 搜索需求生命周期满分 6 分：先按全周期一分为二判断长期趋势，再把后半段一分为二判断近期趋势，最后把近期段继续一分为二判断当前趋势。长期非 D + 近期增长 + 当前增长得 6 分；长期非 D + 当前稳定/增长得 5 分；长期 D + 近期/当前修复得 3-4 分；近期 D + 当前 D 得 0-1 分；长期/近期/当前全 D 得 0 分；数据不足得 3 分。
-- 老品 ASIN 生命周期满分 3 分：每个老品 ASIN 先按 5 分制判断风险，再按严重风险 ASIN 占比折算，严重风险占比 0% 得 3 分，<=25% 得 2 分，25%-50% 得 1 分，>50% 得 0 分；样本少于 3 个时最高只给 2 分。
+- 搜索需求生命周期满分 9 分：先按全周期一分为二判断长期趋势，再把后半段一分为二判断近期趋势，最后把近期段继续一分为二判断当前趋势。长期非 D + 近期增长 + 当前增长按高分折算；长期非 D + 当前稳定/增长按中高分折算；长期 D + 近期/当前修复按中低分折算；近期 D + 当前 D 得低分；长期/近期/当前全 D 得 0 分；数据不足按中性分处理。
+- 老品 ASIN 生命周期只展示不计分：每个老品 ASIN 先按 5 分制判断风险，再按严重风险 ASIN 占比生成验证结论；该验证结论用于复核季节性/生命周期风险，但不进入最终 150 分评分。
 - 每个老品 ASIN 内部仍按 5 分制判断：
 - 未命中风险：5 分。
 - 命中 1 项风险：3 分。

@@ -1,0 +1,217 @@
+{
+  "keyword": "fruit basket",
+  "data": [
+    {
+      "asin": "T000000001",
+      "title": "Fruit basket for kitchen counter 1",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$10.00",
+      "bsr": 100,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000002",
+      "title": "Fruit basket for kitchen counter 2",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$11.00",
+      "bsr": 101,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000003",
+      "title": "Fruit basket for kitchen counter 3",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$12.00",
+      "bsr": 102,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000004",
+      "title": "Fruit basket for kitchen counter 4",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$13.00",
+      "bsr": 103,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000005",
+      "title": "Fruit basket for kitchen counter 5",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$14.00",
+      "bsr": 104,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000006",
+      "title": "Fruit basket for kitchen counter 6",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$15.00",
+      "bsr": 105,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000007",
+      "title": "Fruit basket for kitchen counter 7",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$16.00",
+      "bsr": 106,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000008",
+      "title": "Fruit basket for kitchen counter 8",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$17.00",
+      "bsr": 107,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000009",
+      "title": "Fruit basket for kitchen counter 9",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$18.00",
+      "bsr": 108,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000010",
+      "title": "Fruit basket for kitchen counter 10",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$19.00",
+      "bsr": 109,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000011",
+      "title": "Fruit basket for kitchen counter 11",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$20.00",
+      "bsr": 110,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000012",
+      "title": "Fruit basket for kitchen counter 12",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$21.00",
+      "bsr": 111,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000013",
+      "title": "Fruit basket for kitchen counter 13",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$22.00",
+      "bsr": 112,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000014",
+      "title": "Fruit basket for kitchen counter 14",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$23.00",
+      "bsr": 113,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000015",
+      "title": "Fruit basket for kitchen counter 15",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$24.00",
+      "bsr": 114,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000016",
+      "title": "Fruit basket for kitchen counter 16",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$25.00",
+      "bsr": 115,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000017",
+      "title": "Fruit basket for kitchen counter 17",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$26.00",
+      "bsr": 116,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000018",
+      "title": "Fruit basket for kitchen counter 18",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$27.00",
+      "bsr": 117,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000019",
+      "title": "Fruit basket for kitchen counter 19",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$28.00",
+      "bsr": 118,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    },
+    {
+      "asin": "T000000020",
+      "title": "Fruit basket for kitchen counter 20",
+      "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets",
+      "price": "$29.00",
+      "bsr": 119,
+      "sales": "100",
+      "revenue": "$1500",
+      "ratings": "50"
+    }
+  ],
+  "excluded": [
+    {
+      "asin": "X999999999",
+      "title": "Luxury fruit basket for kitchen counter",
+      "category": "Home & Kitchen > Kitchen Storage > Storage Baskets",
+      "price": "$999.00",
+      "bsr": 500,
+      "sales": "5",
+      "revenue": "$4995",
+      "ratings": "5"
+    }
+  ]
+}
