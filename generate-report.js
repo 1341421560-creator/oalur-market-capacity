@@ -2,6 +2,7 @@
 const path = require('path');
 const { parsePeriod, selectSurvivalBaselinePeriod } = require('./survival-baseline');
 const { aggregateRatingsForParent, aggregateVariantMetrics } = require('./parent-listing-aggregate');
+const { createRunLogger } = require('./run-log');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -399,6 +400,17 @@ const dataFile = process.argv[2];
 if (!dataFile) { console.error('Usage: node generate-report.js <data.json> [--seasonality <seasonality.json>] [--historical <historical.json>] [--asin-lifecycle <asin-lifecycle.json>]'); process.exit(1); }
 const resolvedDataPath = path.isAbsolute(dataFile) ? dataFile : path.join(process.cwd(), dataFile);
 const jsonData = JSON.parse(fs.readFileSync(resolvedDataPath, 'utf-8'));
+const logger = createRunLogger({
+  outputFile: resolvedDataPath,
+  keyword: jsonData.keyword || jsonData.keywords?.join(' + ') || 'report',
+  scriptName: 'generate-report.js'
+});
+logger.start({
+  dataFile: path.relative(process.cwd(), resolvedDataPath),
+  args: process.argv.slice(2),
+  logFile: path.relative(process.cwd(), logger.logFile)
+});
+console.log(`Run log: ${path.relative(process.cwd(), logger.logFile)}`);
 const targetCategoryDisplay = Array.isArray(jsonData.targetCategories) && jsonData.targetCategories.length
   ? jsonData.targetCategories.join('；')
   : (jsonData.targetCategory || '未知');
@@ -3537,6 +3549,31 @@ const finalOutputDirs = outputDirsFromDataFile(resolvedDataPath, keyword);
 const outPath = path.join(finalOutputDirs.reports, REPORT_DATE + '_' + keyword + '_市场分析.html');
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, html, 'utf-8');
+logger.info('report.final_decision', {
+  reportFile: path.relative(process.cwd(), outPath),
+  dataFile: path.relative(process.cwd(), resolvedDataPath),
+  finalScore: finalDecision.totalScore,
+  finalScoreMax: 150,
+  finalLevel: finalDecision.finalLevel.text,
+  vetoes: finalDecision.vetoes,
+  productCount: data.length,
+  excludedCount: excluded.length,
+  minMonthlySales: salesMin,
+  missingSalesCount,
+  marketMissingDataSummary: jsonData.marketRunSummary?.missingDataSummary || null,
+  scoreRows: finalDecision.rows.map(row => ({
+    module: row.module,
+    weight: row.weight,
+    score: row.score,
+    current: row.current
+  }))
+});
+logger.end({
+  status: 'completed',
+  reportFile: path.relative(process.cwd(), outPath),
+  finalScore: finalDecision.totalScore,
+  finalLevel: finalDecision.finalLevel.text
+});
 console.log('报告已保存:', outPath);
 console.log('\n=== 摘要 ===');
 console.log('关键词:', jsonData.keyword);

@@ -18,6 +18,7 @@ const {
   parseNumber
 } = require('./parent-listing-aggregate');
 const { buildRescuePriceGuard, rescuePriceMatches } = require('./rescue-price-guard');
+const { createRunLogger } = require('./run-log');
 
 const OALUR_FILTER_URL = 'https://vip.oalur.com/insight/filter/index?site=US';
 const OALUR_PRODUCT_INFO_URL = 'https://vip.oalur.com/products/information';
@@ -186,16 +187,45 @@ if (keywords.length > 1 && !explicitOutFile) {
   outFile = path.join(outputDirs(keywords.join('-')).data, 'merged-data.json');
 }
 
+const logger = createRunLogger({
+  outputFile: outFile,
+  keyword: keywords.join(' + '),
+  scriptName: 'extract-data.js'
+});
+logger.start({
+  keywords,
+  outFile: path.relative(process.cwd(), outFile),
+  args: process.argv.slice(2),
+  historicalNewOnly,
+  allowOverPageLimit,
+  logFile: path.relative(process.cwd(), logger.logFile)
+});
+console.log(`Run log: ${path.relative(process.cwd(), logger.logFile)}`);
+
+const runStats = {
+  pageLimit: {
+    maxPages: MAX_PAGES,
+    maxRows: MAX_PAGES * 20,
+    allowOverPageLimit
+  },
+  keywords: {}
+};
+
 let keywordIntentAnalysisPromise = null;
 if (!process.argv.includes('--skip-keyword-intent-analysis')) {
   keywordIntentAnalysisPromise = writeKeywordIntentAnalysis(keywords, outFile)
     .then(result => {
       const sources = result.analysis.keywords.map(item => `${item.keyword}:${item.source}`).join(', ');
       console.log(`Keyword intent analysis saved: ${result.file} (${sources})`);
+      logger.info('keyword_intent.saved', {
+        file: path.relative(process.cwd(), result.file),
+        sources
+      });
       return result;
     })
     .catch(error => {
       console.warn(`Keyword intent analysis failed and was skipped: ${error.message}`);
+      logger.warn('keyword_intent.failed', { error: error.message });
       return null;
     });
 }
@@ -218,6 +248,15 @@ if (userBsr) {
     console.log(`BSR range: ${minBsr}-${maxBsr} (auto detected)`);
   }
 }
+
+logger.info('market.parameters', {
+  keywords,
+  bsrRange: `${minBsr}-${maxBsr}`,
+  timeFilter: timeFilterLabel || '近30天',
+  historicalNewOnly,
+  survivalBaseline: survivalBaseline || null,
+  referenceCategories
+});
 
 // 閹绘劕褰囬崙鑺ユ殶閿涘牆鎯堢猾鑽ゆ窗鐠侯垰绶為幓鎰絿閿?
 // Oalur 鐞涖劌銇旈崚妤佹Ё鐏忓嫸绱?
@@ -244,6 +283,10 @@ function runNodeScript(args, label) {
 
 if (keywords.length > 1) {
   console.log(`\nMultiple keywords: independent extraction then offline merge: ${keywords.join(' | ')}`);
+  logger.info('market.multi_keyword_start', {
+    keywords,
+    outputFile: path.relative(process.cwd(), outFile)
+  });
   const mergedDirs = outputDirs(keywords.join('-'));
   const dataFiles = keywords.map(kw => {
     const file = path.join(mergedDirs.data, `${safeSegment(kw)}-data.json`);
@@ -259,6 +302,12 @@ if (keywords.length > 1) {
   });
   runNodeScript([path.join(__dirname, 'merge-data.js'), ...dataFiles, '--output', outFile], 'merge keyword data');
   console.log(`\nMerged multi-keyword data saved: ${outFile}`);
+  logger.end({
+    status: 'completed',
+    mode: 'multi-keyword',
+    mergedFiles: dataFiles.map(file => path.relative(process.cwd(), file)),
+    outFile: path.relative(process.cwd(), outFile)
+  });
   process.exit(0);
 }
 
@@ -347,6 +396,22 @@ function isWithinSixMonthsAtHistoricalSnapshot(item) {
 function filterHistoricalNewCandidates(items) {
   if (!historicalNewOnly) return items;
   return items.filter(isWithinSixMonthsAtHistoricalSnapshot);
+}
+
+function summarizeDataQuality(items) {
+  const rows = Array.isArray(items) ? items : [];
+  const salesValues = rows.map(item => parseNumber(item.salesNumAggregated || item.sales)).filter(value => value > 0);
+  return {
+    productCount: rows.length,
+    minMonthlySales: salesValues.length ? Math.min(...salesValues) : null,
+    maxMonthlySales: salesValues.length ? Math.max(...salesValues) : null,
+    missingSales: rows.filter(item => parseNumber(item.salesNumAggregated || item.sales) <= 0).length,
+    missingRevenue: rows.filter(item => parseNumber(item.revenueNumAggregated || item.revenue) <= 0).length,
+    missingPrice: rows.filter(item => parseNumber(item.price) <= 0).length,
+    missingListingDate: rows.filter(item => !normalizeListingDate(item.listingDate)).length,
+    missingCategory: rows.filter(item => isUnknownCategoryValue(item.category)).length,
+    missingRatings: rows.filter(item => parseNumber(item.ratingsNumAggregated || item.ratings) <= 0).length
+  };
 }
 
 function isUnknownCategoryValue(category) {
@@ -792,22 +857,52 @@ async function supplementZeroParentRatings(browser, items) {
   return summary;
 }
 
-async function sortByListingDateNewestFirst(page) {
-  if (!historicalNewOnly) return;
+async function sortByListingDateNewestFirst(page, keyword) {
+  if (!historicalNewOnly) {
+    const summary = {
+      keyword,
+      skipped: true,
+      reason: 'current-market-extraction-keeps-default-sort'
+    };
+    logger.info('market.sort_listing_date', summary);
+    return summary;
+  }
   const clicked = await page.evaluate(() => {
     const headers = [...document.querySelectorAll('.el-table__header-wrapper th')];
     const target = headers[8] || headers.find(th => /涓婃灦|Listing|Date|鏃堕棿/.test(th.innerText || ''));
-    if (!target) return false;
+    if (!target) return { clicked: false, reason: 'listing-date-header-not-found' };
     const descending = target.querySelector('.descending, .sort-caret.descending');
     const ascending = target.querySelector('.ascending, .sort-caret.ascending');
     (descending || ascending || target).click();
-    return true;
+    return {
+      clicked: true,
+      headerText: (target.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80)
+    };
   });
-  if (clicked) {
+  if (clicked.clicked) {
     console.log('Historical new-only mode: sorted by listing date before extraction');
     await new Promise(r => setTimeout(r, 3000));
+    const check = await extractPageData(page).catch(() => ({ data: [] }));
+    const dates = check.data.map(item => normalizeListingDate(item.listingDate)).filter(Boolean).slice(0, 8);
+    const verifiedDescending = dates.length < 2 || dates.every((date, index) => index === 0 || date <= dates[index - 1]);
+    const summary = {
+      keyword,
+      clicked: true,
+      headerText: clicked.headerText,
+      verifiedDescending,
+      sampleDates: dates
+    };
+    logger.info('market.sort_listing_date', summary);
+    return summary;
   } else {
+    const summary = {
+      keyword,
+      clicked: false,
+      reason: clicked.reason || 'unknown'
+    };
     console.warn('Historical new-only mode: listing date sort header not found; continuing with filtered extraction');
+    logger.warn('market.sort_listing_date', summary);
+    return summary;
   }
 }
 
@@ -885,6 +980,19 @@ async function extractKeyword(page, keyword) {
   console.log(`\n${'='.repeat(50)}`);
   console.log(`Keyword: ${keyword}`);
   console.log('='.repeat(50));
+  const keywordRun = {
+    keyword,
+    startedAt: new Date().toISOString(),
+    bsrRange: `${minBsr}-${maxBsr}`,
+    timeFilter: timeFilterLabel || '近30天',
+    historicalNewOnly,
+    allowOverPageLimit,
+    pagesAvailable: null,
+    pagesFetched: 0,
+    rowsExtracted: 0
+  };
+  runStats.keywords[keyword] = keywordRun;
+  logger.info('market.keyword_start', keywordRun);
 
   // 0. 濮ｅ繑顐奸柌宥嗘煀閸旂姾娴囨い鐢告桨閿涘瞼鈥樻穱婵嗗叡閸戔偓閻樿埖鈧?
   await gotoOalurFilter(page, `keyword ${keyword}`);
@@ -942,13 +1050,36 @@ async function extractKeyword(page, keyword) {
 
   // 4. 閹绘劕褰囩粭?妞?
   if (!(await isVariantSkuChecked(page))) throw new Error('绗竴椤垫姄鍙栧墠鈥滄煡鐪嬪叾浠栧彉浣撯€濅笉鏄嬀閫夌姸鎬侊紝鍋滄鎵ц');
-  await sortByListingDateNewestFirst(page);
+  keywordRun.listingDateSort = await sortByListingDateNewestFirst(page, keyword);
   await ensureVariantSkuEnabled(page);
   let result = await extractPageData(page);
   let allData = filterHistoricalNewCandidates(result.data);
+  keywordRun.firstPage = {
+    rawRows: result.data.length,
+    keptRows: allData.length,
+    total: result.total,
+    lastPage: result.lastPage
+  };
+  keywordRun.pagesAvailable = result.lastPage;
+  keywordRun.pagesFetched = 1;
   console.log(`First page: ${allData.length}/${result.data.length} rows, total: ${result.total}, pages: ${result.lastPage}`);
+  logger.info('market.first_page', {
+    keyword,
+    ...keywordRun.firstPage
+  });
   if (!historicalNewOnly && result.lastPage > MAX_PAGES && !allowOverPageLimit) {
     const estimatedRows = result.total > 0 ? result.total : result.lastPage * 20;
+    keywordRun.pageLimitExceeded = true;
+    keywordRun.pageLimitAction = 'stop_before_over_400';
+    logger.warn('market.page_limit_exceeded', {
+      keyword,
+      lastPage: result.lastPage,
+      estimatedRows,
+      maxPages: MAX_PAGES,
+      maxRows: MAX_PAGES * 20,
+      continueAfter400: false,
+      rerunWith: '--allow-over-400'
+    });
     throw new Error(
       `Oalur result has ${result.lastPage} pages, estimated ${estimatedRows} rows, exceeding current limit ${MAX_PAGES} pages / ${MAX_PAGES * 20} rows. ` +
       `Stop here and ask user whether to continue. If confirmed, rerun with --allow-over-400.`
@@ -958,9 +1089,23 @@ async function extractKeyword(page, keyword) {
   // 5. 閸掑棝銆夐敍鍫熺槷鏉堝啯鏆ｆい?ASIN 闂嗗棗鎮庨敍?
   if (historicalNewOnly && result.data.length > 0 && allData.length === 0) {
     console.log('Historical new-only mode: first page has no products listed within 6 months at snapshot; stop pagination');
+    keywordRun.pagination = {
+      stopReason: 'historical-first-page-outside-six-month-window',
+      pagesPlanned: 1,
+      pagesFetched: 1
+    };
+    logger.info('market.pagination_plan', { keyword, ...keywordRun.pagination });
   } else if (result.lastPage > 1) {
     const actualLastPage = allowOverPageLimit ? result.lastPage : Math.min(result.lastPage, MAX_PAGES);
     console.log(`  extracting up to ${actualLastPage} pages, about ${actualLastPage * 20} rows`);
+    keywordRun.pagination = {
+      pagesAvailable: result.lastPage,
+      pagesPlanned: actualLastPage,
+      maxPages: MAX_PAGES,
+      exceededDefaultLimit: result.lastPage > MAX_PAGES,
+      continueAfter400: result.lastPage > MAX_PAGES && allowOverPageLimit
+    };
+    logger.info('market.pagination_plan', { keyword, ...keywordRun.pagination });
     const prevPageAsins = new Set(allData.map(d => d.asin));
     for (let p = 2; p <= actualLastPage; p++) {
       await page.evaluate((targetPage) => {
@@ -994,12 +1139,28 @@ async function extractKeyword(page, keyword) {
       }
       allData = allData.concat(pageData);
       console.log(`  page ${p}: ${pageData.length}/${rawPageData.length} rows, accumulated: ${allData.length}`);
+      keywordRun.pagesFetched = p;
+      logger.info('market.page_extracted', {
+        keyword,
+        page: p,
+        rawRows: rawPageData.length,
+        keptRows: pageData.length,
+        accumulatedRows: allData.length
+      });
     }
   }
 
   // Extract keyword data and merge results.
   allData.forEach(d => { d.sourceKeyword = keyword; });
+  keywordRun.rowsExtracted = allData.length;
+  keywordRun.completedAt = new Date().toISOString();
   console.log(`"${keyword}" extracted: ${allData.length} rows`);
+  logger.info('market.keyword_complete', {
+    keyword,
+    rowsExtracted: allData.length,
+    pagesFetched: keywordRun.pagesFetched,
+    pagesAvailable: keywordRun.pagesAvailable
+  });
   return allData;
 }
 
@@ -1125,6 +1286,34 @@ async function extractKeyword(page, keyword) {
   console.log(`\nTarget categories: ${targetCategories.join(' | ')}`);
   console.log(`Filtered: ${allRawData.length} -> ${filtered.length}, excluded ${excluded.length}`);
 
+  const missingDataSummary = summarizeDataQuality(filtered);
+  const allParentDataSummary = summarizeDataQuality(allRawData);
+  const marketRunSummary = {
+    logFile: path.relative(process.cwd(), logger.logFile),
+    outputFile: path.relative(process.cwd(), outFile),
+    keywords,
+    bsrRange: `${minBsr}-${maxBsr}`,
+    timeFilter: timeFilterLabel || '近30天',
+    historicalNewOnly,
+    pageLimit: runStats.pageLimit,
+    keywordRuns: runStats.keywords,
+    rawRowsAfterAsinDedupeAndParentAggregation: allRawData.length,
+    filteredProductCount: filtered.length,
+    excludedProductCount: excluded.length,
+    minMonthlySales: missingDataSummary.minMonthlySales,
+    missingDataSummary,
+    allParentDataSummary,
+    supplementSummary: {
+      category: categorySupplementSummary,
+      listingDate: listingDateSupplementSummary,
+      ratings: ratingsSupplementSummary
+    },
+    targetCategories,
+    equivalentCandidateCategories: [...equivalentCategorySet],
+    generatedAt: new Date().toISOString()
+  };
+  logger.info('market.final_summary', marketRunSummary);
+
   // 娣囨繂鐡?
   const output = {
     keywords: keywords,
@@ -1150,6 +1339,7 @@ async function extractKeyword(page, keyword) {
     categorySelection: categorySelectionResult.categorySelection,
     categoryDistribution: sortedCats,
     keywordStats,
+    marketRunSummary,
     ratingsSupplementSummary,
     categorySupplementSummary,
     listingDateSupplementSummary,
@@ -1159,6 +1349,13 @@ async function extractKeyword(page, keyword) {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(output, null, 2));
   console.log(`\nData saved: ${outFile}`);
+  logger.end({
+    status: 'completed',
+    outputFile: path.relative(process.cwd(), outFile),
+    productCount: filtered.length,
+    minMonthlySales: missingDataSummary.minMonthlySales,
+    missingDataSummary
+  });
 
   // 閹芥顩?
   console.log(`\n${'='.repeat(50)}`);
@@ -1169,4 +1366,8 @@ async function extractKeyword(page, keyword) {
   console.log(`  after target filtering: ${filtered.length} rows`);
 
   await browser.disconnect();
-})().catch(err => { console.error('Error:', err.message); process.exit(1); });
+})().catch(err => {
+  logger.error('run.failed', { error: err.message, stack: err.stack });
+  console.error('Error:', err.message);
+  process.exit(1);
+});

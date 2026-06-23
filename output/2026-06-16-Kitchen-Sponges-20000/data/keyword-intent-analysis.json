@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-06-15T16:47:05.441Z",
+  "model": null,
+  "usedOpenAI": false,
+  "filteringImpact": "none",
+  "warning": "AI keyword intent analysis is advisory only. It is not used by target category selection or product filtering.",
+  "keywords": [
+    {
+      "keyword": "kitchen sponges",
+      "normalizedKeyword": "kitchen spong",
+      "source": "local-fallback",
+      "confidence": "low",
+      "shape": [
+        "spong"
+      ],
+      "intent": [
+        "kitchen"
+      ],
+      "equivalent": [],
+      "nearButRisky": [],
+      "exclude": [],
+      "notes": [
+        "No usable OpenAI keyword intent response was available; this is a local fallback based on current built-in token aliases.",
+        "This analysis is advisory only and is not used by product filtering."
+      ]
+    }
+  ]
+}

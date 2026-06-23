@@ -5,6 +5,7 @@ const {
   appendReferenceCategoryArgs,
   normalizeReferenceCategories
 } = require('./reference-categories');
+const { createRunLogger } = require('./run-log');
 
 function localDateString(date = new Date()) {
   const year = date.getFullYear();
@@ -79,14 +80,14 @@ function readBatchProducts(jsonFile) {
   }));
 }
 
-function runNode(scriptName, args, label) {
+function runNode(scriptName, args, label, envExtra = {}) {
   const scriptPath = path.join(__dirname, scriptName);
   console.log(`\n[${label}] node ${scriptName} ${args.map(a => JSON.stringify(String(a))).join(' ')}`);
   const result = spawnSync(process.execPath, [scriptPath, ...args], {
     cwd: __dirname,
     stdio: 'inherit',
     shell: false,
-    env: process.env
+    env: { ...process.env, ...envExtra }
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
@@ -196,7 +197,8 @@ function buildPaths(batchRoot, item, bsr) {
     seasonalityFile: path.join(dataDir, `${keywordFile}-seasonality.json`),
     historicalFile: path.join(dataDir, `${keywordFile}-historical.json`),
     lifecycleFile: path.join(dataDir, `${keywordFile}-asin-lifecycle.json`),
-    cpcFile: path.join(dataDir, `${keywordFile}-cpc-opportunity.json`)
+    cpcFile: path.join(dataDir, `${keywordFile}-cpc-opportunity.json`),
+    logFile: path.join(itemRoot, `${keywordFile}-run.log`)
   };
 }
 
@@ -218,18 +220,140 @@ function stepAlreadyDone(step, paths) {
   return false;
 }
 
-function runStep({ item, paths, progress, progressFile, resume, step, label, scriptName, args, skipWhenDone = true }) {
+function runStep({ item, paths, progress, progressFile, resume, step, label, scriptName, args, skipWhenDone = true, logger }) {
   if (resume && skipWhenDone && stepAlreadyDone(step, paths)) {
     markStep(progressFile, progress, item, step, 'completed', { skipped: true });
     console.log(`[${label}] skipped, output already exists`);
+    logger?.info('batch.step_skipped', { step, label });
     return;
   }
   markStep(progressFile, progress, item, step, 'running', { skipped: false });
-  runNode(scriptName, args, label);
-  markStep(progressFile, progress, item, step, 'completed', { skipped: false });
+  logger?.info('batch.step_start', { step, label, scriptName, args });
+  try {
+    runNode(scriptName, args, label, { OALUR_RUN_LOG: paths.logFile });
+    markStep(progressFile, progress, item, step, 'completed', { skipped: false });
+    logger?.info('batch.step_complete', { step, label });
+  } catch (error) {
+    logger?.error('batch.step_failed', { step, label, error: error.message });
+    throw error;
+  }
 }
 
-function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
+function googleTrendsFetchStatus(seasonalityFile) {
+  const payload = readJsonIfExists(seasonalityFile, null);
+  if (!payload) {
+    return { ok: false, reason: 'seasonality file missing or unreadable', points: 0 };
+  }
+  const trends = payload.googleTrendsData;
+  const points = trends?.data5Years || trends?.data || [];
+  const pointCount = Array.isArray(points) ? points.length : 0;
+  if (!trends) {
+    return { ok: false, reason: 'googleTrendsData missing', points: 0 };
+  }
+  if (pointCount > 0) {
+    return {
+      ok: true,
+      reason: trends.quality?.ok === false ? trends.quality.reason : 'timeline data extracted',
+      points: pointCount,
+      queryKeyword: trends.queryKeyword || trends.keyword || payload.googleTrendsRouting?.finalQueryKeyword || ''
+    };
+  }
+  return {
+    ok: false,
+    reason: trends.error || payload.googleTrendsRouting?.finalStatus || 'Google Trends timeline empty',
+    points: 0,
+    queryKeyword: trends.queryKeyword || trends.keyword || payload.googleTrendsRouting?.finalQueryKeyword || ''
+  };
+}
+
+function restartEdgeCdpBrowser(reason, batchLogger, itemLogger) {
+  const script = `
+$ErrorActionPreference = 'Stop'
+$edgeCandidates = @(
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+)
+$edge = $edgeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $edge) { throw 'msedge.exe not found' }
+$targets = Get-CimInstance Win32_Process -Filter "name = 'msedge.exe'" |
+  Where-Object { $_.CommandLine -match '--remote-debugging-port=9222' }
+foreach ($target in $targets) {
+  Stop-Process -Id $target.ProcessId -Force
+}
+Start-Sleep -Seconds 2
+Start-Process -FilePath $edge -ArgumentList @('--remote-debugging-port=9222','--no-first-run')
+$deadline = (Get-Date).AddSeconds(45)
+do {
+  try {
+    $response = Invoke-WebRequest -Uri 'http://localhost:9222/json/version' -UseBasicParsing -TimeoutSec 2
+    if ($response.StatusCode -eq 200) { exit 0 }
+  } catch {}
+  Start-Sleep -Seconds 1
+} while ((Get-Date) -lt $deadline)
+throw 'CDP port 9222 did not become ready after browser restart'
+`;
+  batchLogger?.warn('google_trends.browser_restart_start', { reason });
+  itemLogger?.warn('google_trends.browser_restart_start', { reason });
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    cwd: __dirname,
+    encoding: 'utf8',
+    shell: false
+  });
+  const details = {
+    reason,
+    status: result.status,
+    stdout: String(result.stdout || '').trim(),
+    stderr: String(result.stderr || '').trim()
+  };
+  if (result.error || result.status !== 0) {
+    details.error = result.error?.message || `PowerShell exited with ${result.status}`;
+    batchLogger?.error('google_trends.browser_restart_failed', details);
+    itemLogger?.error('google_trends.browser_restart_failed', details);
+    throw new Error(`Browser restart failed: ${details.error}${details.stderr ? ` (${details.stderr})` : ''}`);
+  }
+  batchLogger?.info('google_trends.browser_restart_complete', details);
+  itemLogger?.info('google_trends.browser_restart_complete', details);
+}
+
+function updateGoogleTrendsBatchHealth({ item, paths, progress, progressFile, batchState, batchLogger, itemLogger }) {
+  const status = googleTrendsFetchStatus(paths.seasonalityFile);
+  if (status.ok) {
+    batchState.googleTrendsConsecutiveFailures = 0;
+    progress.googleTrendsConsecutiveFailures = 0;
+  } else {
+    batchState.googleTrendsConsecutiveFailures = (batchState.googleTrendsConsecutiveFailures || 0) + 1;
+    progress.googleTrendsConsecutiveFailures = batchState.googleTrendsConsecutiveFailures;
+  }
+  progress.lastGoogleTrendsStatus = {
+    item: item.index,
+    keyword: item.keyword,
+    ...status,
+    consecutiveFailures: batchState.googleTrendsConsecutiveFailures,
+    checkedAt: new Date().toISOString()
+  };
+  saveProgress(progressFile, progress);
+  const eventName = status.ok ? 'google_trends.batch_status_ok' : 'google_trends.batch_status_failed';
+  batchLogger?.[status.ok ? 'info' : 'warn'](eventName, progress.lastGoogleTrendsStatus);
+  itemLogger?.[status.ok ? 'info' : 'warn'](eventName, progress.lastGoogleTrendsStatus);
+
+  if (!status.ok && batchState.googleTrendsConsecutiveFailures >= 3) {
+    const reason = `Google Trends failed for ${batchState.googleTrendsConsecutiveFailures} consecutive products`;
+    restartEdgeCdpBrowser(reason, batchLogger, itemLogger);
+    batchState.googleTrendsConsecutiveFailures = 0;
+    progress.googleTrendsConsecutiveFailures = 0;
+    progress.googleTrendsBrowserRestarts = (progress.googleTrendsBrowserRestarts || 0) + 1;
+    progress.lastGoogleTrendsBrowserRestart = {
+      reason,
+      afterItem: item.index,
+      restartedAt: new Date().toISOString()
+    };
+    saveProgress(progressFile, progress);
+  }
+
+  return status;
+}
+
+function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState, batchLogger) {
   if (!item.keyword) {
     throw new Error(`Product #${item.index} is missing keyword`);
   }
@@ -238,6 +362,19 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
   fs.mkdirSync(paths.dataDir, { recursive: true });
   fs.mkdirSync(paths.reportsDir, { recursive: true });
   fs.mkdirSync(paths.excelDir, { recursive: true });
+  const logger = createRunLogger({
+    logFile: paths.logFile,
+    keyword: item.keyword,
+    scriptName: 'run-keyword-json-batch.js'
+  });
+  logger.start({
+    item: item.index,
+    keyword: item.keyword,
+    asin: item.asin || '',
+    itemRoot: path.relative(process.cwd(), paths.itemRoot),
+    bsr,
+    logFile: path.relative(process.cwd(), paths.logFile)
+  });
 
   console.log('\n' + '='.repeat(70));
   console.log(`#${item.index}: ${item.keyword}`);
@@ -265,7 +402,8 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
     step: 'marketData',
     label: `#${item.index} extract market data`,
     scriptName: 'extract-data.js',
-    args: referenceArgs([item.keyword, String(bsr), paths.dataFile])
+    args: referenceArgs([item.keyword, String(bsr), paths.dataFile]),
+    logger
   });
 
   runStep({
@@ -277,7 +415,17 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
     step: 'seasonality',
     label: `#${item.index} extract seasonality`,
     scriptName: 'extract-seasonality.js',
-    args: [item.keyword, paths.dataFile, paths.seasonalityFile]
+    args: [item.keyword, paths.dataFile, paths.seasonalityFile],
+    logger
+  });
+  updateGoogleTrendsBatchHealth({
+    item,
+    paths,
+    progress,
+    progressFile,
+    batchState,
+    batchLogger,
+    itemLogger: logger
   });
 
   runStep({
@@ -289,7 +437,8 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
     step: 'historicalData',
     label: `#${item.index} extract historical new products`,
     scriptName: 'extract-data.js',
-    args: referenceArgs([item.keyword, String(bsr), paths.historicalFile, '--survival-baseline', 'auto'])
+    args: referenceArgs([item.keyword, String(bsr), paths.historicalFile, '--survival-baseline', 'auto']),
+    logger
   });
 
   const lifecycleFile = fileIfExists(paths.lifecycleFile);
@@ -304,12 +453,18 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
       step: 'cpcOpportunity',
       label: `#${item.index} extract CPC opportunity`,
       scriptName: 'extract-cpc-opportunity.js',
-      args: [lifecycleFile, paths.dataFile, paths.cpcFile]
+      args: [lifecycleFile, paths.dataFile, paths.cpcFile],
+      logger
     });
     cpcFile = fileIfExists(paths.cpcFile);
   } else {
     markStep(progressFile, progress, item, 'cpcOpportunity', 'skipped', { reason: 'lifecycle file not found' });
     console.warn(`Lifecycle file not found, skipping CPC: ${path.relative(process.cwd(), paths.lifecycleFile)}`);
+    logger.warn('batch.step_skipped', {
+      step: 'cpcOpportunity',
+      reason: 'lifecycle file not found',
+      lifecycleFile: path.relative(process.cwd(), paths.lifecycleFile)
+    });
   }
 
   const reportArgs = [paths.dataFile];
@@ -329,7 +484,8 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
     label: `#${item.index} generate main report`,
     scriptName: 'generate-report.js',
     args: reportArgs,
-    skipWhenDone: false
+    skipWhenDone: false,
+    logger
   });
 
   runStep({
@@ -342,7 +498,8 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
     label: `#${item.index} generate child ASIN report`,
     scriptName: 'generate-child-asin-report.js',
     args: [paths.dataFile],
-    skipWhenDone: false
+    skipWhenDone: false,
+    logger
   });
 
   markItemStatus(progressFile, progress, item, {
@@ -350,6 +507,13 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume) {
     currentStep: null,
     completedAt: new Date().toISOString(),
     error: null
+  });
+  logger.end({
+    status: 'completed',
+    item: item.index,
+    keyword: item.keyword,
+    dataFile: path.relative(process.cwd(), paths.dataFile),
+    seasonalityFile: path.relative(process.cwd(), paths.seasonalityFile)
   });
 
   return paths;
@@ -368,6 +532,11 @@ function main() {
   const date = localDateString();
   const batchRoot = path.resolve(opts.batchRoot || path.join(process.cwd(), 'output', `${date}-automated-market`));
   fs.mkdirSync(batchRoot, { recursive: true });
+  const batchLogger = createRunLogger({
+    logFile: path.join(batchRoot, 'batch-run.log'),
+    keyword: 'batch',
+    scriptName: 'run-keyword-json-batch.js'
+  });
 
   const products = readBatchProducts(opts.jsonFile);
   const targets = selectedProducts(products, opts.start, opts.limit);
@@ -384,10 +553,23 @@ function main() {
   const progress = opts.resume
     ? loadProgress(progressFile, batchRoot, opts, products)
     : createProgress(batchRoot, opts, products);
+  const batchState = {
+    googleTrendsConsecutiveFailures: Number(progress.googleTrendsConsecutiveFailures || 0)
+  };
   progress.status = 'running';
   progress.selected = { start: opts.start, limit: opts.limit || null, count: targets.length };
   saveProgress(progressFile, progress);
   console.log(`Progress: ${path.relative(process.cwd(), progressFile)}`);
+  console.log(`Batch log: ${path.relative(process.cwd(), batchLogger.logFile)}`);
+  batchLogger.start({
+    jsonFile: path.relative(process.cwd(), path.resolve(opts.jsonFile)),
+    batchRoot: path.relative(process.cwd(), batchRoot),
+    progressFile: path.relative(process.cwd(), progressFile),
+    resume: opts.resume,
+    totalProducts: products.length,
+    selectedCount: targets.length,
+    bsr: opts.bsr
+  });
 
   const outputs = [];
   for (const item of targets) {
@@ -399,7 +581,7 @@ function main() {
       continue;
     }
     try {
-      outputs.push(runOne(item, batchRoot, opts.bsr, progress, progressFile, opts.resume));
+      outputs.push(runOne(item, batchRoot, opts.bsr, progress, progressFile, opts.resume, batchState, batchLogger));
     } catch (error) {
       markItemStatus(progressFile, progress, item, {
         status: 'failed',
@@ -410,6 +592,11 @@ function main() {
       progress.failedAt = new Date().toISOString();
       progress.lastFailedItem = item.index;
       saveProgress(progressFile, progress);
+      batchLogger.error('batch.item_failed', {
+        item: item.index,
+        keyword: item.keyword,
+        error: error.message
+      });
       throw error;
     }
   }
@@ -417,6 +604,11 @@ function main() {
   progress.status = 'completed';
   progress.completedAt = new Date().toISOString();
   saveProgress(progressFile, progress);
+  batchLogger.end({
+    status: 'completed',
+    outputRoots: outputs.map(paths => path.relative(process.cwd(), paths.itemRoot)),
+    googleTrendsBrowserRestarts: progress.googleTrendsBrowserRestarts || 0
+  });
 
   console.log('\n' + '='.repeat(70));
   console.log('Batch completed. Output roots:');

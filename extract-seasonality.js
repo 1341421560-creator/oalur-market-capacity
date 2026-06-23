@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { localKeywordIntentAnalysis } = require('./keyword-intent-ai');
+const { createRunLogger } = require('./run-log');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -64,11 +65,26 @@ if (!rawKeyword || !keyword) {
   process.exit(1);
 }
 
+const logger = createRunLogger({
+  outputFile: outFile,
+  keyword,
+  scriptName: 'extract-seasonality.js'
+});
+logger.start({
+  rawKeyword,
+  keyword,
+  bsrDataFile: bsrDataFile ? path.relative(process.cwd(), path.resolve(bsrDataFile)) : null,
+  outFile: path.relative(process.cwd(), path.resolve(outFile)),
+  logFile: path.relative(process.cwd(), logger.logFile)
+});
+console.log(`Run log: ${path.relative(process.cwd(), logger.logFile)}`);
+
 const gtrendsFile = path.join(dirs.data, safeName + '-google-trends.json');
 const oalurVolFile = path.join(dirs.data, safeName + '-oalur-volume.json');
 const asinTrendsFile = path.join(dirs.data, safeName + '-asin-trends.json');
 const keywordIntentFile = path.join(dirs.data, 'keyword-intent-analysis.json');
 const nodeBin = process.execPath;
+const googleTrendsAttempts = [];
 
 function googleTrendsQuality(data) {
   const points = data?.data5Years || data?.data || [];
@@ -174,12 +190,37 @@ function googleTrendsFallbackKeywords(value, keywordAgent) {
 }
 
 function runGoogleTrendsExtraction(queryKeyword, outputFile) {
-  execFileSync(
-    nodeBin,
-    [path.join(SKILL_DIR, 'extract-google-trends.js'), queryKeyword, outputFile],
-    { stdio: 'inherit', timeout: 90000 }
-  );
-  return fs.existsSync(outputFile) ? JSON.parse(fs.readFileSync(outputFile, 'utf-8')) : null;
+  const attempt = {
+    queryKeyword,
+    outputFile: path.relative(process.cwd(), outputFile),
+    startedAt: new Date().toISOString()
+  };
+  const startedMs = Date.now();
+  try {
+    execFileSync(
+      nodeBin,
+      [path.join(SKILL_DIR, 'extract-google-trends.js'), queryKeyword, outputFile],
+      { stdio: 'inherit', timeout: 90000, env: { ...process.env, OALUR_RUN_LOG: logger.logFile } }
+    );
+    const data = fs.existsSync(outputFile) ? JSON.parse(fs.readFileSync(outputFile, 'utf-8')) : null;
+    const points = data?.data5Years || data?.data || [];
+    attempt.completedAt = new Date().toISOString();
+    attempt.durationMs = Date.now() - startedMs;
+    attempt.status = data?.error && !points.length ? 'failed' : 'completed';
+    attempt.points = Array.isArray(points) ? points.length : 0;
+    attempt.error = data?.error || null;
+    googleTrendsAttempts.push(attempt);
+    logger.info('google_trends.attempt', attempt);
+    return data;
+  } catch (error) {
+    attempt.completedAt = new Date().toISOString();
+    attempt.durationMs = Date.now() - startedMs;
+    attempt.status = 'failed';
+    attempt.error = error.message;
+    googleTrendsAttempts.push(attempt);
+    logger.warn('google_trends.attempt', attempt);
+    throw error;
+  }
 }
 
 function annotateGoogleTrendsData(data, requestedKeyword, queryKeyword, quality, fallbackReason = '') {
@@ -605,6 +646,12 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
 
   const keywordAgent = runLocalKeywordAgent(keyword);
   console.log(`Local keyword agent: core="${keywordAgent.coreKeyword}", Google Trends candidates=${(keywordAgent.googleTrendsKeywords || []).join(', ') || '--'}`);
+  logger.info('google_trends.local_keyword_agent', {
+    keyword,
+    coreKeyword: keywordAgent.coreKeyword,
+    googleTrendsKeywords: keywordAgent.googleTrendsKeywords || [],
+    keywordIntentFile: path.relative(process.cwd(), keywordIntentFile)
+  });
 
   // ─── Step 1: Google Trends ───
   let gtData = null;
@@ -768,6 +815,27 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   const seasonality = analyzeSeasonality(gtData, oalurVolData, asinTrends);
 
   // ─── Step 5: 输出 ───
+  const finalGooglePoints = gtData?.data5Years || gtData?.data || [];
+  const googleTrendsRouting = {
+    requestedKeyword: keyword,
+    finalQueryKeyword: gtData?.queryKeyword || gtData?.keyword || keyword,
+    fallbackUsed: Boolean(gtData?.queryKeyword && gtData.queryKeyword !== keyword),
+    fallbackReason: gtData?.keywordFallbackReason || gtData?.previousError || '',
+    localAgent: {
+      coreKeyword: keywordAgent.coreKeyword,
+      googleTrendsKeywords: keywordAgent.googleTrendsKeywords || []
+    },
+    attempts: googleTrendsAttempts,
+    finalStatus: gtData?.error && !(Array.isArray(finalGooglePoints) && finalGooglePoints.length)
+      ? 'failed'
+      : Array.isArray(finalGooglePoints) && finalGooglePoints.length
+        ? 'completed'
+        : 'missing',
+    finalPoints: Array.isArray(finalGooglePoints) ? finalGooglePoints.length : 0,
+    finalQuality: gtData?.quality || googleTrendsQuality(gtData)
+  };
+  logger.info('google_trends.final', googleTrendsRouting);
+
   const output = {
     rawKeyword,
     keyword,
@@ -780,12 +848,22 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
       oalurVolume: !!oalurVolData,
       asinTrends: !!asinTrends
     },
+    googleTrendsRouting,
     googleTrendsData: gtData,
     oalurVolumeData: oalurVolData,
     asinTrendsData: asinTrends
   };
 
   fs.writeFileSync(outFile, JSON.stringify(output, null, 2));
+  logger.end({
+    status: 'completed',
+    outFile: path.relative(process.cwd(), outFile),
+    seasonalityType: seasonality.seasonalityType,
+    seasonalityScore: seasonality.seasonalityScore,
+    googleTrendsStatus: googleTrendsRouting.finalStatus,
+    googleTrendsFinalQuery: googleTrendsRouting.finalQueryKeyword,
+    googleTrendsFinalPoints: googleTrendsRouting.finalPoints
+  });
 
   // ─── 摘要 ───
   console.log(`\n${'='.repeat(50)}`);
@@ -799,4 +877,7 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   if (asinTrends) console.log(`📈 ASIN 趋势: ${asinTrends.products?.filter(p => p.trendData).length || 0} 个有数据`);
   console.log(`\n✅ 数据已保存: ${outFile}`);
 
-})();
+})().catch(error => {
+  logger.error('run.failed', { error: error.message, stack: error.stack });
+  throw error;
+});
