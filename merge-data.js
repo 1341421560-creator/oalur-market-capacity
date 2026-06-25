@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { selectTargetCategories, listingMatchesKeywordIntent, titleMatchesKeywordIntent } = require('./category-selector');
+const { selectTargetCategories } = require('./category-selector');
 const {
   buildReferenceCategorySelectionSummary,
   normalizeReferenceCategories,
@@ -11,7 +11,21 @@ const {
   applyTargetCategoryMatch,
   listingMatchesTargetCategories
 } = require('./parent-listing-aggregate');
-const { buildRescuePriceGuard, rescuePriceMatches } = require('./rescue-price-guard');
+const { buildRescuePriceGuard } = require('./rescue-price-guard');
+const {
+  applyCodexSemanticReview,
+  applyCodexSemanticReviewExclusion,
+  buildCodexSemanticReviewCandidates,
+  loadCodexSemanticReview,
+  REVIEW_STANDARD
+} = require('./codex-semantic-review');
+const {
+  TARGET_CATEGORY_REVIEW_STANDARD,
+  applyTargetCategoryCodexReview,
+  buildTargetCategoryCodexReviewRequest,
+  loadTargetCategoryCodexReview,
+  writeTargetCategoryCodexReviewRequest
+} = require('./target-category-codex-review');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -113,14 +127,31 @@ allRawData = allRawData.filter(item => {
 console.log(`ASIN 去重后: ${allRawData.length} 条`);
 
 const categorySelectionSource = allRawData;
-const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
+const initialCategorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
+const targetCategoryCodexReview = loadTargetCategoryCodexReview(outFile, {});
+const targetCategoryCodexApplication = applyTargetCategoryCodexReview(initialCategorySelectionResult, targetCategoryCodexReview.review);
+const categorySelectionResult = targetCategoryCodexApplication.categorySelectionResult;
 const targetCategory = categorySelectionResult.targetCategory;
 const targetCategories = categorySelectionResult.targetCategories;
+const targetCategoryCodexReviewRequest = buildTargetCategoryCodexReviewRequest({
+  keywords,
+  categorySelection: categorySelectionResult.categorySelection,
+  targetCategories,
+  referenceCategories,
+  items: categorySelectionSource
+});
+const targetCategoryCodexReviewWrite = writeTargetCategoryCodexReviewRequest(
+  outFile,
+  targetCategoryCodexReviewRequest,
+  targetCategoryCodexReview.review,
+  targetCategoryCodexReview.reviewFile
+);
 const referenceCategorySelection = buildReferenceCategorySelectionSummary(
   referenceCategories,
   categorySelectionResult.categorySelection
 );
 const targetCategorySet = new Set(targetCategories);
+const codexSemanticReview = loadCodexSemanticReview(outFile, {});
 const equivalentCategorySet = new Set(
   categorySelectionResult.categorySelection
     .filter(d => d.titleIntentRescueCandidate || d.functionalEquivalent)
@@ -152,29 +183,36 @@ console.log('\\n📊 类目分布（ASIN/变体明细 Top 10）:');
 sortedCats.slice(0, 10).forEach(([cat, count]) => console.log(`  [${count}] ${cat}`));
 
 const listingMatchesFilter = (item) => {
+  const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
   if (listingMatchesTargetCategories(item, targetCategorySet)) {
     item.targetCategoryDirectMatched = true;
+    delete item.codexSemanticReviewExcluded;
+    delete item.codexSemanticReviewRescued;
+    delete item.codexSemanticReviewDecision;
+    delete item.targetCategoryTitleIntentRejected;
     return true;
   }
-  const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
-  const equivalentCategoryHit = categories.some(category => equivalentCategorySet.has(category));
-  if (!equivalentCategoryHit) return false;
-  const rescued = listingMatchesKeywordIntent(item, keywords);
-  if (rescued && !rescuePriceMatches(item, rescuePriceGuard)) return false;
-  if (rescued) {
-    const rescuedRows = (Array.isArray(item.variantRows) ? item.variantRows : [])
-      .filter(row => equivalentCategorySet.has(row.category) && keywords.some(keyword => titleMatchesKeywordIntent(row.title || item.title, keyword)));
-    item.targetMatchedCategories = [...new Set([...(item.targetMatchedCategories || []), ...rescuedRows.map(row => row.category).filter(Boolean)])];
-    item.targetMatchedChildAsins = [...new Set(rescuedRows.map(row => row.asin).filter(Boolean))];
-    item.keywordIntentRescued = true;
+  if (applyCodexSemanticReviewExclusion(item, codexSemanticReview.reviewIndex)) {
+    return false;
   }
-  return rescued;
+  if (applyCodexSemanticReview(item, codexSemanticReview.reviewIndex)) {
+    item.targetMatchedCategories = [...new Set([...(item.targetMatchedCategories || []), ...categories])];
+    return true;
+  }
+  return false;
 };
 const filtered = [];
 const excluded = [];
 allRawData.forEach(item => {
   if (listingMatchesFilter(item)) filtered.push(item);
   else excluded.push(item);
+});
+const codexSemanticReviewCandidates = buildCodexSemanticReviewCandidates({
+  keywords,
+  categorySelection: categorySelectionResult.categorySelection,
+  targetCategories,
+  items: allRawData,
+  referenceCategories
 });
 console.log(`\n🎯 目标类目组: ${targetCategories.join(' | ')}`);
 console.log(`✅ 过滤: ${allRawData.length} → ${filtered.length} 条, 排除 ${excluded.length} 条`);
@@ -197,6 +235,24 @@ const output = {
   equivalentCandidateCategories: [...equivalentCategorySet],
   referenceCategories,
   referenceCategorySelection,
+  targetCategoryCodexReviewFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReview.reviewFile),
+  targetCategoryCodexReviewLoaded: targetCategoryCodexApplication.decisionCount > 0,
+  targetCategoryCodexReviewApplied: Boolean(targetCategoryCodexApplication.applied),
+  targetCategorySelectionMode: targetCategoryCodexApplication.mode,
+  targetCategoryCodexReviewDecisionCount: targetCategoryCodexApplication.decisionCount,
+  targetCategoryCodexReviewReviewedCategoryCount: targetCategoryCodexApplication.reviewedCategoryCount,
+  targetCategoryCodexReviewTotalCategoryCount: targetCategoryCodexApplication.totalCategoryCount,
+  targetCategoryCodexReviewComplete: Boolean(targetCategoryCodexApplication.complete),
+  targetCategoryCodexReviewIncludedCategories: targetCategoryCodexApplication.includedCategories,
+  targetCategoryCodexReviewExcludedCategories: targetCategoryCodexApplication.excludedCategories,
+  targetCategoryCodexReviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+  targetCategoryCodexReviewRequestFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReviewWrite.reviewFile),
+  targetCategoryCodexReviewRequestWritten: Boolean(targetCategoryCodexReviewWrite.written),
+  targetCategoryCodexReviewRequest,
+  codexSemanticReviewFile: path.relative(path.dirname(path.resolve(outFile)), codexSemanticReview.reviewFile),
+  codexSemanticReviewLoaded: Boolean(codexSemanticReview.review),
+  codexSemanticReviewStandard: REVIEW_STANDARD,
+  codexSemanticReviewCandidates,
   rescuePriceGuard,
   categorySelection: categorySelectionResult.categorySelection,
   categoryDistribution: sortedCats,

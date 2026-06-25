@@ -317,7 +317,7 @@ async function extractVolume(page, kw) {
   console.log(`   关键词: "${keyword}"`);
   console.log('='.repeat(50));
 
-  const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
+  const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null, protocolTimeout: 600000 });
   console.log('✅ 已连接 Edge 浏览器');
 
   try {

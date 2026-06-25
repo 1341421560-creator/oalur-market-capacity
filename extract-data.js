@@ -4,7 +4,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { activatePage } = require('./browser-page-utils');
 const { selectSurvivalBaselinePeriod } = require('./survival-baseline');
-const { selectTargetCategories, listingMatchesKeywordIntent, titleMatchesKeywordIntent } = require('./category-selector');
+const { selectTargetCategories } = require('./category-selector');
 const { writeKeywordIntentAnalysis } = require('./keyword-intent-ai');
 const {
   appendReferenceCategoryArgs,
@@ -17,7 +17,21 @@ const {
   listingMatchesTargetCategories,
   parseNumber
 } = require('./parent-listing-aggregate');
-const { buildRescuePriceGuard, rescuePriceMatches } = require('./rescue-price-guard');
+const { buildRescuePriceGuard } = require('./rescue-price-guard');
+const {
+  applyCodexSemanticReview,
+  applyCodexSemanticReviewExclusion,
+  buildCodexSemanticReviewCandidates,
+  loadCodexSemanticReview,
+  REVIEW_STANDARD
+} = require('./codex-semantic-review');
+const {
+  TARGET_CATEGORY_REVIEW_STANDARD,
+  applyTargetCategoryCodexReview,
+  buildTargetCategoryCodexReviewRequest,
+  loadTargetCategoryCodexReview,
+  writeTargetCategoryCodexReviewRequest
+} = require('./target-category-codex-review');
 const { createRunLogger } = require('./run-log');
 
 const OALUR_FILTER_URL = 'https://vip.oalur.com/insight/filter/index?site=US';
@@ -108,6 +122,7 @@ function outputDirs(taskName) {
 
 // Parse product age strings from the search table.
 const MAX_PAGES = 20;
+const HARD_SKIP_ROWS = 500;
 
 // 閸濅胶琚惔鏇犲殠鐞涱煉绱欐禒?SKILL.md 閸氬本顒炵紒瀛樺Б閿?
 const CATEGORY_BSR_TABLE = [
@@ -206,10 +221,74 @@ const runStats = {
   pageLimit: {
     maxPages: MAX_PAGES,
     maxRows: MAX_PAGES * 20,
+    hardSkipRows: HARD_SKIP_ROWS,
     allowOverPageLimit
   },
   keywords: {}
 };
+
+class SkipOver500Error extends Error {
+  constructor(details) {
+    super(`Oalur result estimated ${details.estimatedRows} rows for "${details.keyword}", exceeding hard skip limit ${HARD_SKIP_ROWS}.`);
+    this.name = 'SkipOver500Error';
+    this.code = 'SKIP_OVER_500';
+    this.details = details;
+  }
+}
+
+function estimateRowsFromFirstPage(result) {
+  return Math.max(result.total || 0, result.lastPage * 20);
+}
+
+function writeSkippedOver500Output(details) {
+  const output = {
+    keywords,
+    keyword: keywords.join(' + '),
+    bsrRange: minBsr + '-' + maxBsr,
+    timeFilter: timeFilterLabel || '近30天',
+    historicalNewOnly,
+    skipped: true,
+    skippedOver500: true,
+    skipReason: 'estimated product count exceeds hard limit',
+    skipDetails: details,
+    rawTotal: 0,
+    total: 0,
+    allCount: 0,
+    filteredCount: 0,
+    excludedCount: 0,
+    targetMatchedCount: 0,
+    salesFloorExcludedCount: 0,
+    targetCategory: '',
+    targetCategories: [],
+    equivalentCandidateCategories: [],
+    codexSemanticReviewStandard: REVIEW_STANDARD,
+    targetCategoryCodexReviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+    referenceCategories,
+    categorySelection: [],
+    categoryDistribution: [],
+    keywordStats: {},
+    marketRunSummary: {
+      logFile: path.relative(process.cwd(), logger.logFile),
+      outputFile: path.relative(process.cwd(), outFile),
+      keywords,
+      bsrRange: `${minBsr}-${maxBsr}`,
+      skipped: true,
+      skippedOver500: true,
+      skipDetails: details,
+      codexSemanticReviewStandard: REVIEW_STANDARD,
+      targetCategoryCodexReviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+      generatedAt: new Date().toISOString()
+    },
+    data: [],
+    excluded: []
+  };
+  fs.mkdirSync(path.dirname(outFile), { recursive: true });
+  fs.writeFileSync(outFile, JSON.stringify(output, null, 2), 'utf8');
+  logger.warn('market.skip_over_500.output_written', {
+    outputFile: path.relative(process.cwd(), outFile),
+    ...details
+  });
+}
 
 let keywordIntentAnalysisPromise = null;
 if (!process.argv.includes('--skip-keyword-intent-analysis')) {
@@ -1067,8 +1146,28 @@ async function extractKeyword(page, keyword) {
     keyword,
     ...keywordRun.firstPage
   });
+  if (!historicalNewOnly) {
+    const estimatedRows = estimateRowsFromFirstPage(result);
+    if (estimatedRows > HARD_SKIP_ROWS) {
+      const details = {
+        keyword,
+        estimatedRows,
+        total: result.total,
+        lastPage: result.lastPage,
+        firstPageRows: result.data.length,
+        hardSkipRows: HARD_SKIP_ROWS,
+        bsrRange: `${minBsr}-${maxBsr}`,
+        timeFilter: timeFilterLabel || '近30天',
+        checkedAt: new Date().toISOString()
+      };
+      keywordRun.skippedOver500 = true;
+      keywordRun.skipDetails = details;
+      logger.warn('market.skip_over_500', details);
+      throw new SkipOver500Error(details);
+    }
+  }
   if (!historicalNewOnly && result.lastPage > MAX_PAGES && !allowOverPageLimit) {
-    const estimatedRows = result.total > 0 ? result.total : result.lastPage * 20;
+    const estimatedRows = estimateRowsFromFirstPage(result);
     keywordRun.pageLimitExceeded = true;
     keywordRun.pageLimitAction = 'stop_before_over_400';
     logger.warn('market.page_limit_exceeded', {
@@ -1166,13 +1265,9 @@ async function extractKeyword(page, keyword) {
 
 (async () => {
   if (keywordIntentAnalysisPromise) await keywordIntentAnalysisPromise;
-  const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
-  const pages = await browser.pages();
-  let page = pages.find(p => p.url().includes('oalur.com/insight/filter'));
-  if (!page) {
-    page = await browser.newPage();
-    await gotoOalurFilter(page, 'initial page');
-  }
+  const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null, protocolTimeout: 600000 });
+  const page = await browser.newPage();
+  await gotoOalurFilter(page, 'initial page');
   await activatePage(page);
   console.log('閴?瀹歌尪绻涢幒?Edge');
 
@@ -1187,7 +1282,24 @@ async function extractKeyword(page, keyword) {
       await gotoOalurFilter(page, `keyword ${kw}`);
       await new Promise(r => setTimeout(r, 3000));
     }
-    const kwData = await extractKeyword(page, kw);
+    let kwData = [];
+    try {
+      kwData = await extractKeyword(page, kw);
+    } catch (error) {
+      if (error?.code === 'SKIP_OVER_500') {
+        writeSkippedOver500Output(error.details);
+        logger.end({
+          status: 'skipped',
+          skippedOver500: true,
+          outputFile: path.relative(process.cwd(), outFile),
+          skipDetails: error.details
+        });
+        await page.close().catch(() => {});
+        await browser.disconnect();
+        return;
+      }
+      throw error;
+    }
     keywordStats[kw] = kwData.length;
     allRawData = allRawData.concat(kwData);
   }
@@ -1214,14 +1326,31 @@ async function extractKeyword(page, keyword) {
     const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
     return categories.length ? categories.map(category => ({ ...item, category })) : [item];
   });
-  const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
+  const initialCategorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
+  const targetCategoryCodexReview = loadTargetCategoryCodexReview(outFile, {});
+  const targetCategoryCodexApplication = applyTargetCategoryCodexReview(initialCategorySelectionResult, targetCategoryCodexReview.review);
+  const categorySelectionResult = targetCategoryCodexApplication.categorySelectionResult;
   const targetCategory = categorySelectionResult.targetCategory;
   const targetCategories = categorySelectionResult.targetCategories;
+  const targetCategoryCodexReviewRequest = buildTargetCategoryCodexReviewRequest({
+    keywords,
+    categorySelection: categorySelectionResult.categorySelection,
+    targetCategories,
+    referenceCategories,
+    items: categorySelectionSource
+  });
+  const targetCategoryCodexReviewWrite = writeTargetCategoryCodexReviewRequest(
+    outFile,
+    targetCategoryCodexReviewRequest,
+    targetCategoryCodexReview.review,
+    targetCategoryCodexReview.reviewFile
+  );
   const referenceCategorySelection = buildReferenceCategorySelectionSummary(
     referenceCategories,
     categorySelectionResult.categorySelection
   );
   const targetCategorySet = new Set(targetCategories);
+  const codexSemanticReview = loadCodexSemanticReview(outFile, {});
   const equivalentCategorySet = new Set(
     categorySelectionResult.categorySelection
       .filter(d => d.titleIntentRescueCandidate || d.functionalEquivalent)
@@ -1253,23 +1382,23 @@ async function extractKeyword(page, keyword) {
   }
 
   const listingMatchesFilter = (item) => {
+    const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
     if (listingMatchesTargetCategories(item, targetCategorySet)) {
       item.targetCategoryDirectMatched = true;
+      delete item.codexSemanticReviewExcluded;
+      delete item.codexSemanticReviewRescued;
+      delete item.codexSemanticReviewDecision;
+      delete item.targetCategoryTitleIntentRejected;
       return true;
     }
-    const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
-    const equivalentCategoryHit = categories.some(category => equivalentCategorySet.has(category));
-    if (!equivalentCategoryHit) return false;
-    const rescued = listingMatchesKeywordIntent(item, keywords);
-    if (rescued && !rescuePriceMatches(item, rescuePriceGuard)) return false;
-    if (rescued) {
-      const rescuedRows = (Array.isArray(item.variantRows) ? item.variantRows : [])
-        .filter(row => equivalentCategorySet.has(row.category) && keywords.some(keyword => titleMatchesKeywordIntent(row.title || item.title, keyword)));
-      item.targetMatchedCategories = [...new Set([...(item.targetMatchedCategories || []), ...rescuedRows.map(row => row.category).filter(Boolean)])];
-      item.targetMatchedChildAsins = [...new Set(rescuedRows.map(row => row.asin).filter(Boolean))];
-      item.keywordIntentRescued = true;
+    if (applyCodexSemanticReviewExclusion(item, codexSemanticReview.reviewIndex)) {
+      return false;
     }
-    return rescued;
+    if (applyCodexSemanticReview(item, codexSemanticReview.reviewIndex)) {
+      item.targetMatchedCategories = [...new Set([...(item.targetMatchedCategories || []), ...categories])];
+      return true;
+    }
+    return false;
   };
   const matched = [];
   const notMatched = [];
@@ -1279,6 +1408,13 @@ async function extractKeyword(page, keyword) {
   });
   const filtered = matched;
   const excluded = notMatched;
+  const codexSemanticReviewCandidates = buildCodexSemanticReviewCandidates({
+    keywords,
+    categorySelection: categorySelectionResult.categorySelection,
+    targetCategories,
+    items: allRawData,
+    referenceCategories
+  });
   if (!historicalNewOnly) {
     listingDateSupplementSummary = await supplementMissingListingDates(browser, filtered);
   }
@@ -1310,6 +1446,23 @@ async function extractKeyword(page, keyword) {
     },
     targetCategories,
     equivalentCandidateCategories: [...equivalentCategorySet],
+    targetCategoryCodexReviewFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReview.reviewFile),
+    targetCategoryCodexReviewLoaded: targetCategoryCodexApplication.decisionCount > 0,
+    targetCategoryCodexReviewApplied: Boolean(targetCategoryCodexApplication.applied),
+    targetCategorySelectionMode: targetCategoryCodexApplication.mode,
+    targetCategoryCodexReviewDecisionCount: targetCategoryCodexApplication.decisionCount,
+    targetCategoryCodexReviewReviewedCategoryCount: targetCategoryCodexApplication.reviewedCategoryCount,
+    targetCategoryCodexReviewTotalCategoryCount: targetCategoryCodexApplication.totalCategoryCount,
+    targetCategoryCodexReviewComplete: Boolean(targetCategoryCodexApplication.complete),
+    targetCategoryCodexReviewIncludedCategories: targetCategoryCodexApplication.includedCategories,
+    targetCategoryCodexReviewExcludedCategories: targetCategoryCodexApplication.excludedCategories,
+    targetCategoryCodexReviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+    targetCategoryCodexReviewRequestFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReviewWrite.reviewFile),
+    targetCategoryCodexReviewRequestWritten: Boolean(targetCategoryCodexReviewWrite.written),
+    codexSemanticReviewFile: path.relative(path.dirname(path.resolve(outFile)), codexSemanticReview.reviewFile),
+    codexSemanticReviewLoaded: Boolean(codexSemanticReview.review),
+    codexSemanticReviewStandard: REVIEW_STANDARD,
+    codexSemanticReviewCandidates,
     generatedAt: new Date().toISOString()
   };
   logger.info('market.final_summary', marketRunSummary);
@@ -1335,6 +1488,24 @@ async function extractKeyword(page, keyword) {
     equivalentCandidateCategories: [...equivalentCategorySet],
     referenceCategories,
     referenceCategorySelection,
+    targetCategoryCodexReviewFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReview.reviewFile),
+    targetCategoryCodexReviewLoaded: targetCategoryCodexApplication.decisionCount > 0,
+    targetCategoryCodexReviewApplied: Boolean(targetCategoryCodexApplication.applied),
+    targetCategorySelectionMode: targetCategoryCodexApplication.mode,
+    targetCategoryCodexReviewDecisionCount: targetCategoryCodexApplication.decisionCount,
+    targetCategoryCodexReviewReviewedCategoryCount: targetCategoryCodexApplication.reviewedCategoryCount,
+    targetCategoryCodexReviewTotalCategoryCount: targetCategoryCodexApplication.totalCategoryCount,
+    targetCategoryCodexReviewComplete: Boolean(targetCategoryCodexApplication.complete),
+    targetCategoryCodexReviewIncludedCategories: targetCategoryCodexApplication.includedCategories,
+    targetCategoryCodexReviewExcludedCategories: targetCategoryCodexApplication.excludedCategories,
+    targetCategoryCodexReviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+    targetCategoryCodexReviewRequestFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReviewWrite.reviewFile),
+    targetCategoryCodexReviewRequestWritten: Boolean(targetCategoryCodexReviewWrite.written),
+    targetCategoryCodexReviewRequest,
+    codexSemanticReviewFile: path.relative(path.dirname(path.resolve(outFile)), codexSemanticReview.reviewFile),
+    codexSemanticReviewLoaded: Boolean(codexSemanticReview.review),
+    codexSemanticReviewStandard: REVIEW_STANDARD,
+    codexSemanticReviewCandidates,
     rescuePriceGuard,
     categorySelection: categorySelectionResult.categorySelection,
     categoryDistribution: sortedCats,
@@ -1365,6 +1536,7 @@ async function extractKeyword(page, keyword) {
   console.log(`  after merge/dedupe: ${allRawData.length} rows`);
   console.log(`  after target filtering: ${filtered.length} rows`);
 
+  await page.close().catch(() => {});
   await browser.disconnect();
 })().catch(err => {
   logger.error('run.failed', { error: err.message, stack: err.stack });

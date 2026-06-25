@@ -233,7 +233,7 @@ async function main() {
 
   console.log(`CPC sample source: ${sample.source}, ASIN count: ${asins.length}`);
   console.log(`CPC concurrency: ${CPC_CONCURRENCY} pages`);
-  const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
+  const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null, protocolTimeout: 600000 });
   const products = await runPool(asins, CPC_CONCURRENCY, async (asin) => {
     const local = findLocalProduct(marketData, asin);
     const remote = await getAcosDataInNewPage(browser, asin);

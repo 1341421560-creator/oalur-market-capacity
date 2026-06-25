@@ -83,8 +83,19 @@ const gtrendsFile = path.join(dirs.data, safeName + '-google-trends.json');
 const oalurVolFile = path.join(dirs.data, safeName + '-oalur-volume.json');
 const asinTrendsFile = path.join(dirs.data, safeName + '-asin-trends.json');
 const keywordIntentFile = path.join(dirs.data, 'keyword-intent-analysis.json');
+const googleTrendsCoreReviewFile = path.join(dirs.data, safeName + '-google-trends-core-review.json');
 const nodeBin = process.execPath;
 const googleTrendsAttempts = [];
+
+const GOOGLE_TRENDS_CORE_REVIEW_STANDARD = {
+  version: 1,
+  triggerRule: 'When the input keyword Google Trends timeline is sparse, local Codex reads the input keyword, first-pass product titles, target categories, and category distribution to choose a better Google Trends core query.',
+  decisionRule: 'Choose the shortest commonly searched term that still represents the same core product demand as the input keyword.',
+  includeRule: 'Use singular/plural normalization, category leaf terms, or common buyer vocabulary when they represent the same product demand.',
+  excludeRule: 'Do not choose broad adjacent terms that change the product demand, accessory type, or usage context.',
+  requiredContext: 'Local Codex must read the input keyword plus first-pass product titles and categories before writing the core-query decision.',
+  rescueMechanism: 'Google Trends retry uses the query explicitly marked selected/target in the product google-trends core review JSON file.'
+};
 
 function googleTrendsQuality(data) {
   const points = data?.data5Years || data?.data || [];
@@ -111,9 +122,120 @@ function googleTrendsQuality(data) {
   return { ok: true, reason: '', points: values.length, nonzero, nonzeroRate, max, avg };
 }
 
-function runLocalKeywordAgent(keyword) {
+function readMarketDataForTrends(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch (error) {
+    console.warn(`Market data read skipped for Google Trends routing: ${error.message}`);
+    return null;
+  }
+}
+
+function readJsonIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch (error) {
+    console.warn(`JSON read skipped: ${error.message}`);
+    return null;
+  }
+}
+
+function normalizeReviewDecision(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function googleTrendsCoreReviewSelectedQuery(review) {
+  const direct = review?.selectedQuery || review?.coreQuery || review?.googleTrendsQuery || review?.queryKeyword;
+  if (direct) return String(direct).trim();
+  const entries = [
+    ...(Array.isArray(review?.queries) ? review.queries : []),
+    ...(Array.isArray(review?.decisions) ? review.decisions : []),
+    ...(Array.isArray(review?.items) ? review.items : [])
+  ];
+  const selected = entries.find(entry => {
+    const decision = normalizeReviewDecision(entry?.decision || entry?.status);
+    return ['selected', 'target', 'include', 'yes', 'true'].includes(decision);
+  });
+  return selected ? String(selected.query || selected.keyword || selected.googleTrendsQuery || '').trim() : '';
+}
+
+function loadGoogleTrendsCoreReview() {
+  const review = readJsonIfExists(googleTrendsCoreReviewFile);
+  const selectedQuery = googleTrendsCoreReviewSelectedQuery(review);
+  return {
+    reviewFile: googleTrendsCoreReviewFile,
+    review,
+    selectedQuery
+  };
+}
+
+function categoryLeaf(category) {
+  return String(category || '')
+    .split('>')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .pop() || '';
+}
+
+function normalizeCandidatePhrase(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^\w\s-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function semanticGoogleTrendsCandidates(keyword, marketData) {
+  const cleaned = normalizeCandidatePhrase(keyword);
+  const candidates = [];
+  const leafSynonyms = {
+    'cocktail picks': ['cocktail picks', 'appetizer picks'],
+    'toothpicks': ['toothpick', 'toothpicks', 'appetizer toothpicks', 'appetizer picks'],
+    'tea storage chests': ['tea bag organizer', 'tea box organizer'],
+    'tea filters': ['tea filters', 'tea bags'],
+    'pizza peels': ['pizza peel'],
+    'cookie presses': ['cookie press'],
+    'cookie cutters': ['cookie cutters'],
+    'pizza pans and stones': ['pizza stone', 'pizza pan'],
+    'ice cube molds and trays': ['ice cube mold'],
+    'tool and gadget sets': [],
+    'seafood tools': []
+  };
+
+  const categories = [
+    ...(Array.isArray(marketData?.targetCategories) ? marketData.targetCategories : []),
+    marketData?.targetCategory
+  ].filter(Boolean);
+
+  for (const category of categories) {
+    const leaf = normalizeCandidatePhrase(categoryLeaf(category));
+    if (!leaf) continue;
+    candidates.push(...(leafSynonyms[leaf] || [leaf]));
+  }
+
+  if (/\btoothpicks?\b/.test(cleaned) && /\bappetizers?\b/.test(cleaned)) {
+    candidates.unshift('toothpick', 'toothpicks', 'cocktail picks', 'appetizer picks');
+  }
+
+  return uniqueStrings(candidates).filter(candidate => {
+    const normalized = normalizeCandidatePhrase(candidate);
+    return normalized && normalized !== cleaned && (normalized.split(/\s+/).length >= 2 || ['toothpick', 'toothpicks'].includes(normalized));
+  });
+}
+
+function runLocalKeywordAgent(keyword, marketData) {
+  const semanticCandidates = semanticGoogleTrendsCandidates(keyword, marketData);
   const analysis = localKeywordIntentAnalysis(keyword, [
     'Google Trends routing uses this local-agent core keyword plan before falling back from sparse long-tail data.'
+  ]);
+  analysis.googleTrendsSemanticCandidates = semanticCandidates;
+  analysis.googleTrendsKeywords = uniqueStrings([
+    ...semanticCandidates,
+    ...(analysis.googleTrendsKeywords || []),
+    analysis.coreKeyword
   ]);
   const payload = {
     generatedAt: new Date().toISOString(),
@@ -137,15 +259,25 @@ function uniqueStrings(values) {
     .filter(Boolean))];
 }
 
-function googleTrendsFallbackKeywords(value, keywordAgent) {
+function googleTrendsFallbackKeywords(value, keywordAgent, marketData, coreReview) {
+  if (coreReview?.review) {
+    const selected = String(coreReview.selectedQuery || '').trim();
+    const cleaned = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!selected) return [];
+    return selected.toLowerCase() === cleaned ? [] : [selected];
+  }
+
   const agentCandidates = uniqueStrings([
+    coreReview?.selectedQuery,
+    ...semanticGoogleTrendsCandidates(value, marketData),
+    ...(keywordAgent?.googleTrendsSemanticCandidates || []),
     ...(keywordAgent?.googleTrendsKeywords || []),
     keywordAgent?.coreKeyword
   ]);
   const cleaned = String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const agentFallbacks = agentCandidates.filter(candidate => {
     const normalized = candidate.toLowerCase();
-    return normalized && normalized !== cleaned && normalized.split(/\s+/).length >= 2;
+    return normalized && normalized !== cleaned && (normalized.split(/\s+/).length >= 2 || ['toothpick', 'toothpicks'].includes(normalized));
   });
   if (agentFallbacks.length) return agentFallbacks;
 
@@ -644,12 +776,21 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
   console.log(`  关键词: ${keyword}`);
   console.log('='.repeat(50));
 
-  const keywordAgent = runLocalKeywordAgent(keyword);
+  const marketDataForTrends = readMarketDataForTrends(bsrDataFile);
+  const googleTrendsCoreReview = loadGoogleTrendsCoreReview();
+  const keywordAgent = runLocalKeywordAgent(keyword, marketDataForTrends);
   console.log(`Local keyword agent: core="${keywordAgent.coreKeyword}", Google Trends candidates=${(keywordAgent.googleTrendsKeywords || []).join(', ') || '--'}`);
+  if (googleTrendsCoreReview.selectedQuery) {
+    console.log(`Codex Google Trends core review loaded: selected="${googleTrendsCoreReview.selectedQuery}"`);
+  }
   logger.info('google_trends.local_keyword_agent', {
     keyword,
     coreKeyword: keywordAgent.coreKeyword,
+    googleTrendsSemanticCandidates: keywordAgent.googleTrendsSemanticCandidates || [],
     googleTrendsKeywords: keywordAgent.googleTrendsKeywords || [],
+    codexCoreReviewFile: path.relative(process.cwd(), googleTrendsCoreReview.reviewFile),
+    codexCoreReviewLoaded: Boolean(googleTrendsCoreReview.review),
+    codexCoreReviewSelectedQuery: googleTrendsCoreReview.selectedQuery || '',
     keywordIntentFile: path.relative(process.cwd(), keywordIntentFile)
   });
 
@@ -689,7 +830,7 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
 
   if (gtData && !gtData.error) {
     let quality = googleTrendsQuality(gtData);
-    const fallbackKeywords = googleTrendsFallbackKeywords(keyword, keywordAgent);
+    const fallbackKeywords = googleTrendsFallbackKeywords(keyword, keywordAgent, marketDataForTrends, googleTrendsCoreReview);
     if (!quality.ok && fallbackKeywords.length) {
       const fallbackReason = quality.reason;
       console.log(`Google Trends data sparse for "${keyword}", retrying with local core-term candidates: ${fallbackKeywords.join(', ')}`);
@@ -824,6 +965,12 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
     localAgent: {
       coreKeyword: keywordAgent.coreKeyword,
       googleTrendsKeywords: keywordAgent.googleTrendsKeywords || []
+    },
+    codexCoreReview: {
+      loaded: Boolean(googleTrendsCoreReview.review),
+      file: path.relative(path.dirname(path.resolve(outFile)), googleTrendsCoreReview.reviewFile),
+      selectedQuery: googleTrendsCoreReview.selectedQuery || '',
+      standard: GOOGLE_TRENDS_CORE_REVIEW_STANDARD
     },
     attempts: googleTrendsAttempts,
     finalStatus: gtData?.error && !(Array.isArray(finalGooglePoints) && finalGooglePoints.length)

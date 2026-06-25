@@ -51,8 +51,9 @@
   参考类目：{{REFERENCE_CATEGORIES}}<br>
   参考类目作用：{{REFERENCE_CATEGORY_SCOPE}}<br>
   参考类目命中：{{REFERENCE_CATEGORY_MATCH_SUMMARY}}<br>
-  救回候选类目：{{RESCUE_CATEGORIES}}<br>
-  救回价格过滤：{{RESCUE_PRICE_RULE}}<br>
+  自动候选类目（仅证据）：{{RESCUE_CATEGORIES}}<br>
+  产品级 Codex 复核候选：{{PRODUCT_CODEX_REVIEW_SUMMARY}}<br>
+  旧标题救回价格过滤：{{RESCUE_PRICE_RULE}}<br>
   过滤前：{{ALL_COUNT}} 条 → 过滤后：{{FILTERED_COUNT}} 条（排除 {{EXCLUDED_COUNT}} 条无关品类）<br>
   数据时间范围：{{TIME_RANGE}}
 </div>
@@ -391,7 +392,7 @@
 <div class="card">
   <h2>过滤后的 ASIN（{{FILTERED_COUNT}} 个，按 BSR 排序，{{TIME_RANGE}}）</h2>
   <div style="margin-bottom:10px;padding:8px 12px;background:#fff7e6;border-left:4px solid #faad14;border-radius:6px;font-size:12px;color:#666;">
-    标题意图救回：<strong>{{KEYWORD_INTENT_RESCUED_COUNT}}</strong> 个。表示该父体 Listing 没有落在目标类目组内，但处于功能等价候选类目，且标题命中搜索意图。
+    产品级 Codex listing 救回：<strong>{{KEYWORD_INTENT_RESCUED_COUNT}}</strong> 个。表示该父体 Listing 没有落在目标类目组内，但已在本地 Codex 产品语义复核中被判定为同产品/同核心功能。
   </div>
   <div class="scroll-table">
     <table>

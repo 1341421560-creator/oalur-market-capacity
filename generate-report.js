@@ -418,14 +418,25 @@ const targetCategorySetForDisplay = new Set(Array.isArray(jsonData.targetCategor
 const rescueCategoriesForDisplay = (Array.isArray(jsonData.equivalentCandidateCategories) ? jsonData.equivalentCandidateCategories : [])
   .filter(category => category && !targetCategorySetForDisplay.has(category));
 const rescueCategoryDisplay = rescueCategoriesForDisplay.length ? rescueCategoriesForDisplay.join('；') : '无';
+const productCodexReviewCandidates = Array.isArray(jsonData.codexSemanticReviewCandidates) ? jsonData.codexSemanticReviewCandidates : [];
+const productCodexCandidateProductCount = productCodexReviewCandidates.reduce((sum, candidate) => sum + (Array.isArray(candidate.products) ? candidate.products.length : 0), 0);
+const productCodexRescuedCount = Array.isArray(jsonData.data)
+  ? jsonData.data.filter(item => item && item.codexSemanticReviewRescued).length
+  : 0;
+const productCodexExcludedCount = Array.isArray(jsonData.excluded)
+  ? jsonData.excluded.filter(item => item && item.codexSemanticReviewExcluded).length
+  : 0;
+const productCodexReviewSummary = productCodexReviewCandidates.length
+  ? `${productCodexReviewCandidates.length} 个类目 / ${productCodexCandidateProductCount} 个 listing；决策文件${jsonData.codexSemanticReviewLoaded ? '已加载' : '未加载'}；已救回 ${productCodexRescuedCount}，明确排除 ${productCodexExcludedCount}`
+  : '无';
 const rescuePriceGuard = jsonData.rescuePriceGuard || {};
 const rescuePriceRuleText = rescuePriceGuard.enabled
-  ? `仅作用于标题意图救回；动态 P90=${rescuePriceGuard.p90}，上限=P90×1.1=$${rescuePriceGuard.upperLimit}，样本=${rescuePriceGuard.targetSampleSize} 个目标类目产品`
-  : '未启用';
+  ? `旧自动标题救回已停用；当前 listing 救回只依据产品级 Codex 决策。保留参考区间：动态 P90=${rescuePriceGuard.p90}，上限=P90×1.1=$${rescuePriceGuard.upperLimit}，样本=${rescuePriceGuard.targetSampleSize} 个目标类目产品`
+  : '旧自动标题救回已停用；当前 listing 救回只依据产品级 Codex 决策';
 const referenceCategoriesForDisplay = Array.isArray(jsonData.referenceCategories) ? jsonData.referenceCategories.filter(Boolean) : [];
 const referenceCategoryDisplay = referenceCategoriesForDisplay.length ? referenceCategoriesForDisplay.join('；') : '无';
-const referenceCategoryScopeText = referenceCategoriesForDisplay.length
-  ? '直接作为目标类目；不参与类目评分，不额外跳过标题意图/价格守卫，不参与后续评分'
+let referenceCategoryScopeText = referenceCategoriesForDisplay.length
+  ? '先参与目标类目 Codex 判断；未被判为目标类目时，才进入产品级 Codex listing 救回复核'
   : '未提供参考类目';
 const referenceSelection = jsonData.referenceCategorySelection || {};
 const referenceMatchedRows = (Array.isArray(jsonData.categorySelection) ? jsonData.categorySelection : []).filter(row => row.referenceCategoryMatch);
@@ -438,18 +449,34 @@ const referenceUnmatchedCount = Number.isFinite(Number(referenceSelection.unmatc
 const referenceCategoryMatchSummary = referenceCategoriesForDisplay.length
   ? `命中 ${referenceMatchedCount} 个类目，未命中 ${referenceUnmatchedCount} 个参考类目`
   : '无';
+const targetCategoryCodexReviewCount = Array.isArray(jsonData.targetCategoryCodexReviewRequest?.categories)
+  ? jsonData.targetCategoryCodexReviewRequest.categories.length
+  : 0;
+const targetCategoryCodexReviewDecisionCount = Number(jsonData.targetCategoryCodexReviewDecisionCount || 0);
+const targetCategoryCodexReviewReviewedCount = Number(jsonData.targetCategoryCodexReviewReviewedCategoryCount || 0);
+const targetCategorySelectionMode = jsonData.targetCategorySelectionMode || (jsonData.targetCategoryCodexReviewLoaded ? 'codex-final' : 'rule-provisional-pending-codex');
+if (targetCategorySelectionMode === 'codex-final') {
+  referenceCategoryScopeText = referenceCategoriesForDisplay.length
+    ? '已参与目标类目 Codex 判断；未被判 target 的参考命中类目才作为产品级 listing 救回复核来源'
+    : '未提供参考类目';
+}
+const targetCategoryCodexReviewSummary = jsonData.targetCategoryCodexReviewLoaded
+  ? ` 目标类目已加载本地 Codex 复核决策（${targetCategoryCodexReviewReviewedCount || targetCategoryCodexReviewDecisionCount}/${targetCategoryCodexReviewCount || '?'} 个类目，包含参考命中类目）。`
+  : targetCategoryCodexReviewCount
+    ? ` 已生成目标类目本地 Codex 复核上下文（${targetCategoryCodexReviewCount} 个类目，包含参考命中类目），本地 Codex 需判断关键词核心产品是否属于每个 Amazon 类目。`
+    : '';
 function categoryMeetsTargetThreshold(row) {
   if (!row) return false;
-  const referenceConfirmedTarget = row.referenceCategoryMatch &&
-    row.referenceCategoryMatchType === 'exact' &&
-    Number(row.baseScore) >= 35 &&
-    (row.shapeHit || Number(row.titleAllRate) >= 0.25 || Number(row.titleAnyRate) >= 0.7);
-  if (row.functionalEquivalent && !referenceConfirmedTarget) return false;
+  if (row.functionalEquivalent) return false;
+  if (row.leafModifierMismatch) return false;
   const score = Number(row.score);
   const count = Number(row.count);
   const titleAllRate = Number(row.titleAllRate);
   if (!Number.isFinite(score) || !Number.isFinite(count)) return false;
-  return (score >= 110 && (count >= 3 || score >= 180))
+  return (score >= 110 && (count >= 3 || score >= 180) && (
+    row.contextMatch !== false ||
+    row.allKeywordHit
+  ))
     || (row.shapeHit && row.contextMatch !== false && count >= 20 && Number.isFinite(titleAllRate) && titleAllRate >= 0.5);
 }
 const categorySelectionRows = Array.isArray(jsonData.categorySelection) ? jsonData.categorySelection : [];
@@ -457,13 +484,15 @@ const selectedCategoryRows = categorySelectionRows.filter(row => targetCategoryS
 const qualifiedCategoryRows = categorySelectionRows.filter(categoryMeetsTargetThreshold);
 const fallbackTargetRows = selectedCategoryRows.filter(row => !categoryMeetsTargetThreshold(row));
 const referenceCategorySelectionSuffix = referenceCategoriesForDisplay.length
-  ? ` 参考类目已直接作为目标类目（${referenceCategoryMatchSummary}）。`
+  ? ` 参考类目先进入目标类目 Codex 判断；未被判 target 的参考命中类目才进入产品级 Codex listing 救回复核（${referenceCategoryMatchSummary}）。`
   : ' 未使用参考类目。';
-const targetCategorySelectionNote = referenceCategoriesForDisplay.length
-  ? `输入参考类目直接作为目标类目，并与原评分规则选出的目标类目合并去重；其它非目标类目仍按原规则进入救回候选类目复核。${referenceCategorySelectionSuffix}`
+const targetCategorySelectionNote = targetCategorySelectionMode === 'codex-final'
+  ? `${referenceCategoriesForDisplay.length ? `输入参考类目已参与目标类目 Codex 判断（${referenceCategoryMatchSummary}）；未被判 target 的参考命中类目才作为产品级 listing 救回复核来源；` : ''}目标类目以本地 Codex 对“关键词核心产品是否属于 Amazon 类目”的判断为最终裁决；规则评分和标题样例只作为证据层。${targetCategoryCodexReviewSummary}`
+  : referenceCategoriesForDisplay.length
+  ? `输入参考类目会先参与目标类目 Codex 判断，不直接跳过类目判断；只有未被判 target 的参考命中类目才进入产品级 Codex listing 救回复核。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`
   : fallbackTargetRows.length
-  ? `<span style="color:#ad4e00;font-weight:600;">未发现达到目标类目门槛的类目，当前目标类目为兜底选择，请重点复核过滤结果。</span> 最高分类目：${escapeHtml(categorySelectionRows[0]?.category || '未知')}（${Number(categorySelectionRows[0]?.score || 0).toFixed(1)}分）；目标门槛：相关分≥110且父体数≥3，或相关分≥180。${referenceCategorySelectionSuffix}`
-  : `已按目标类目门槛选中：${qualifiedCategoryRows.length || selectedCategoryRows.length} 个达标类目。目标门槛：相关分≥110且父体数≥3，或相关分≥180。${referenceCategorySelectionSuffix}`;
+  ? `<span style="color:#ad4e00;font-weight:600;">未发现达到目标类目门槛的类目，当前目标类目为兜底选择，请重点复核过滤结果。</span> 最高分类目：${escapeHtml(categorySelectionRows[0]?.category || '未知')}（${Number(categorySelectionRows[0]?.score || 0).toFixed(1)}分）；目标门槛：相关分≥110且父体数≥3（或相关分≥180）、无上下文冲突、无叶子类目修饰词缺失；或形态命中、无上下文冲突、父体数≥20、标题强匹配≥50%。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`
+  : `已按目标类目门槛选中：${qualifiedCategoryRows.length || selectedCategoryRows.length} 个达标类目。目标门槛：相关分≥110且父体数≥3（或相关分≥180）、无上下文冲突、无叶子类目修饰词缺失；或形态命中、无上下文冲突、父体数≥20、标题强匹配≥50%。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`;
 const metricTargetCategories = Array.isArray(jsonData.targetCategories) && jsonData.targetCategories.length
   ? jsonData.targetCategories
   : [jsonData.targetCategory].filter(Boolean);
@@ -481,6 +510,21 @@ function itemHasAnyTargetCategory(item, targetSet) {
     ].filter(Boolean);
     return rowCategories.some(category => targetSet.has(category));
   });
+}
+function itemCategoriesForMarketScope(item) {
+  return [
+    item?.category,
+    ...(Array.isArray(item?.categories) ? item.categories : []),
+    ...(Array.isArray(item?.targetMatchedCategories) ? item.targetMatchedCategories : []),
+    ...(Array.isArray(item?.variantRows) ? item.variantRows.flatMap(row => [
+      row?.category,
+      ...(Array.isArray(row?.categories) ? row.categories : [])
+    ]) : [])
+  ].filter(Boolean);
+}
+function effectiveMarketCategorySet(items = [], fallbackCategories = []) {
+  const categories = items.flatMap(itemCategoriesForMarketScope).filter(Boolean);
+  return new Set(categories.length ? categories : fallbackCategories.filter(Boolean));
 }
 jsonData.data = refreshParentAggregatedMetricsForReport(jsonData.data || []);
 jsonData.excluded = refreshParentAggregatedMetricsForReport(jsonData.excluded || []);
@@ -510,15 +554,16 @@ let survivalBaselineInfo = selectSurvivalBaselinePeriod(new Date());
 let historicalPeriodCheck = null;
 if (historicalFile && fs.existsSync(historicalFile)) {
   historicalData = JSON.parse(fs.readFileSync(historicalFile, 'utf-8'));
-  if (Array.isArray(jsonData.targetCategories) && jsonData.targetCategories.length) {
-    const targetSet = new Set(jsonData.targetCategories);
+  const marketScopeSet = effectiveMarketCategorySet(jsonData.data || [], jsonData.targetCategories || []);
+  if (marketScopeSet.size) {
     const histAll = [...(historicalData.data || []), ...(historicalData.excluded || [])];
-    historicalData.data = histAll.filter(item => itemHasAnyTargetCategory(item, targetSet));
-    historicalData.excluded = histAll.filter(item => !itemHasAnyTargetCategory(item, targetSet));
+    historicalData.data = histAll.filter(item => itemHasAnyTargetCategory(item, marketScopeSet));
+    historicalData.excluded = histAll.filter(item => !itemHasAnyTargetCategory(item, marketScopeSet));
     historicalData.filteredCount = historicalData.data.length;
     historicalData.excludedCount = historicalData.excluded.length;
     historicalData.targetCategory = jsonData.targetCategory;
     historicalData.targetCategories = jsonData.targetCategories;
+    historicalData.marketScopeCategories = [...marketScopeSet];
   }
   historicalData.data = refreshParentAggregatedMetricsForReport(historicalData.data || []);
   historicalData.excluded = refreshParentAggregatedMetricsForReport(historicalData.excluded || []);
@@ -570,6 +615,114 @@ const total = jsonData.total;
 const TODAY = new Date();
 const REPORT_DATE = localDateString(TODAY);
 
+function listingAsinIdentifiers(item) {
+  return [...new Set([
+    item?.asin,
+    item?.pasin,
+    item?.parentAsin,
+    ...(Array.isArray(item?.childAsins) ? item.childAsins : []),
+    ...(Array.isArray(item?.targetMatchedChildAsins) ? item.targetMatchedChildAsins : []),
+    ...(Array.isArray(item?.variantRows) ? item.variantRows.map(row => row?.asin) : [])
+  ].filter(Boolean))];
+}
+
+const currentFilteredListingAsinSet = new Set((data || []).flatMap(listingAsinIdentifiers));
+
+function filterExternalProductsToCurrentListings(products = []) {
+  const kept = [];
+  const removed = [];
+  for (const product of products) {
+    const asin = typeof product === 'string' ? product : product?.asin;
+    if (asin && currentFilteredListingAsinSet.has(asin)) kept.push(product);
+    else removed.push(asin || '');
+  }
+  return { kept, removed: removed.filter(Boolean) };
+}
+
+function classifyCpcRatioForReport(ratioPct) {
+  if (ratioPct == null || !Number.isFinite(ratioPct)) {
+    return { grade: '未分析', conclusion: 'CPC 或客单价缺失' };
+  }
+  if (ratioPct < 5) return { grade: '健康', conclusion: 'CPC/客单价低于 5%，广告点击成本相对客单价压力较低' };
+  if (ratioPct < 8) return { grade: '可接受', conclusion: 'CPC/客单价处于 5%-8%，广告成本可接受，但仍需利润空间承接' };
+  if (ratioPct < 12) return { grade: '偏高', conclusion: 'CPC/客单价处于 8%-12%，需要强利润或强转化支撑' };
+  if (ratioPct < 15) return { grade: '高风险', conclusion: 'CPC/客单价处于 12%-15%，新品冷启动广告压力高' };
+  return { grade: '很高风险', conclusion: 'CPC/客单价达到 15% 以上，广告成本风险很高' };
+}
+
+function averageNumber(values) {
+  const nums = values.filter(v => typeof v === 'number' && Number.isFinite(v));
+  return nums.length ? nums.reduce((sum, value) => sum + value, 0) / nums.length : null;
+}
+
+function rebuildCpcSummaryForCurrentListings(products, previousSummary = {}) {
+  if (!products.length) return null;
+  const ratios = products.map(item => item.cpcPriceRatioPct).filter(v => typeof v === 'number' && Number.isFinite(v));
+  const cpcs = products.map(item => item.avgCpc).filter(v => typeof v === 'number' && Number.isFinite(v));
+  const medianRatio = medianNumber(ratios);
+  const medianCpc = medianNumber(cpcs);
+  const avgRatio = averageNumber(ratios);
+  const avgCpc = averageNumber(cpcs);
+  const summaryClass = classifyCpcRatioForReport(medianRatio);
+  return {
+    ...previousSummary,
+    asinCount: products.length,
+    avgCpc: avgCpc == null ? null : Number(avgCpc.toFixed(2)),
+    avgCpcPriceRatioPct: avgRatio == null ? null : Number(avgRatio.toFixed(2)),
+    medianCpc: medianCpc == null ? null : Number(medianCpc.toFixed(2)),
+    medianCpcPriceRatioPct: medianRatio == null ? null : Number(medianRatio.toFixed(2)),
+    grade: summaryClass.grade,
+    conclusion: summaryClass.conclusion
+  };
+}
+
+if (cpcOpportunityData?.products) {
+  const { kept, removed } = filterExternalProductsToCurrentListings(cpcOpportunityData.products);
+  if (removed.length) {
+    console.warn(`CPC 样本已按当前过滤后 Listing 裁剪，移除 ${removed.length} 个非当前样本 ASIN: ${removed.slice(0, 10).join(', ')}`);
+  }
+  cpcOpportunityData = {
+    ...cpcOpportunityData,
+    products: kept,
+    summary: rebuildCpcSummaryForCurrentListings(kept, cpcOpportunityData.summary || {}),
+    sampleSelection: {
+      ...(cpcOpportunityData.sampleSelection || {}),
+      filteredToCurrentListings: true,
+      removedByCurrentListingFilter: removed.length
+    }
+  };
+}
+
+if (lifecycleData?.products) {
+  const { kept, removed } = filterExternalProductsToCurrentListings(lifecycleData.products);
+  if (removed.length) {
+    console.warn(`生命周期样本已按当前过滤后 Listing 裁剪，移除 ${removed.length} 个非当前样本 ASIN: ${removed.slice(0, 10).join(', ')}`);
+  }
+  lifecycleData = {
+    ...lifecycleData,
+    products: kept,
+    asins: kept.map(item => item.asin).filter(Boolean),
+    filteredToCurrentListings: true,
+    removedByCurrentListingFilter: removed.length
+  };
+}
+
+if (seasonalityData?.asinTrendsData?.products) {
+  const { kept, removed } = filterExternalProductsToCurrentListings(seasonalityData.asinTrendsData.products);
+  if (removed.length) {
+    console.warn(`季节性 ASIN 趋势样本已按当前过滤后 Listing 裁剪，移除 ${removed.length} 个非当前样本 ASIN: ${removed.slice(0, 10).join(', ')}`);
+  }
+  seasonalityData = {
+    ...seasonalityData,
+    asinTrendsData: {
+      ...seasonalityData.asinTrendsData,
+      products: kept,
+      filteredToCurrentListings: true,
+      removedByCurrentListingFilter: removed.length
+    }
+  };
+}
+
 function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
   const excludedCount = excludedItems.length;
   if (!excludedCount) return '';
@@ -584,23 +737,35 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
   const rows = [...countByCategory.entries()].map(([category, count]) => {
     const selection = selectionByCategory.get(category) || {};
     const score = Number(selection.score);
+    const baseScore = Number(selection.baseScore);
+    const contextConflictPenalty = Number(selection.contextConflictPenalty || 0);
     const share = excludedCount ? count / excludedCount : 0;
     const flags = [];
     if (share >= 0.05) flags.push('数量占比高');
     if (Number.isFinite(score) && score >= 35) flags.push('相关分较高');
+    if (contextConflictPenalty > 0 || selection.contextMatch === false) flags.push('上下文冲突已拦截');
+    if (selection.leafModifierMismatch) flags.push('叶子类目缺修饰词已拦截');
     if (selection.referenceCategoryMatch) flags.push('参考类目命中但未入选');
-    if (rescueSet.has(category)) flags.push('救回候选但未通过标题/价格');
+    if (selection.highShareTitleRescueCandidate) flags.push('待 Codex 语义复核');
+    if (rescueSet.has(category)) flags.push('自动候选，需 Codex 复核后救回');
     if (targetSet.has(category)) flags.push('目标类目内被排除');
     return {
       category,
       count,
       share,
+      isTargetCategory: targetSet.has(category),
       score: Number.isFinite(score) ? score : null,
-      reason: selection.reason || '',
+      baseScore: Number.isFinite(baseScore) ? baseScore : null,
+      contextConflictPenalty: Number.isFinite(contextConflictPenalty) ? contextConflictPenalty : 0,
+      reason: [selection.reason, selection.highShareTitleRescueReason].filter(Boolean).join('；'),
       flags
     };
   });
+  const targetCategoryExcludedRows = rows
+    .filter(row => row.isTargetCategory)
+    .sort((a, b) => b.count - a.count);
   const importantRows = rows
+    .filter(row => !row.isTargetCategory)
     .filter(row => row.share >= 0.05 || (row.score != null && row.score >= 35))
     .sort((a, b) => {
       const scoreDiff = (b.score ?? -999) - (a.score ?? -999);
@@ -608,16 +773,37 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
       return b.count - a.count;
     })
     .slice(0, 12);
-  if (!importantRows.length) return '';
-  return `
+  if (!importantRows.length && !targetCategoryExcludedRows.length) return '';
+  const targetRowsBlock = targetCategoryExcludedRows.length ? `
 <div class="card">
-  <h2>高分/高占比被过滤类目</h2>
-  <div style="margin-bottom:10px;padding:8px 12px;background:#fff7e6;border-left:4px solid #faad14;border-radius:6px;font-size:12px;color:#666;line-height:1.8;">
-    展示规则：只列出被过滤父体 Listing 中数量占比 ≥5%，或类目相关性评分 ≥35 的类目。用于人工复核是否存在目标类目漏选或标题意图救回不足。
+  <h2>目标类目内被排除 Listing 汇总</h2>
+  <div style="margin-bottom:10px;padding:8px 12px;background:#f0f5ff;border-left:4px solid #2f54eb;border-radius:6px;font-size:12px;color:#555;line-height:1.8;">
+    这些类目本身仍是目标类目；这里统计的是目标类目下被产品级 Codex 明确排除的父体 Listing，例如替换头、清洁砖、机器人、桶、通用清洁工具或其它非核心产品。它们不参与最终市场容量、竞争、CPC、存活率等判断。
   </div>
   <div class="scroll-table">
     <table>
-      <tr><th>#</th><th>被过滤类目</th><th>父体数量</th><th>排除占比</th><th>类目相关分</th><th>提示</th><th>评分原因</th></tr>
+      <tr><th>#</th><th>目标类目</th><th>被排除父体数</th><th>占全部排除项</th><th>类目相关分</th><th>说明</th></tr>
+      ${targetCategoryExcludedRows.map((row, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td style="min-width:360px;max-width:760px;white-space:normal;line-height:1.5;">${escapeHtml(row.category)}</td>
+        <td>${row.count}</td>
+        <td>${(row.share * 100).toFixed(1)}%</td>
+        <td>${row.score == null ? '--' : row.score.toFixed(1)}</td>
+        <td style="min-width:240px;white-space:normal;line-height:1.5;color:#666;">目标类目直入前先执行产品级 Codex 排除；被判非核心产品的 listing 会保留在排除项中。</td>
+      </tr>`).join('')}
+    </table>
+  </div>
+</div>` : '';
+  const nonTargetRowsBlock = importantRows.length ? `
+<div class="card">
+  <h2>非目标高分/高占比被过滤类目</h2>
+  <div style="margin-bottom:10px;padding:8px 12px;background:#fff7e6;border-left:4px solid #faad14;border-radius:6px;font-size:12px;color:#666;line-height:1.8;">
+    展示规则：只列出非目标类目中，被过滤父体 Listing 数量占比 ≥5%，或类目相关性评分 ≥35 的类目。若提示“上下文冲突已拦截”，表示类目有字面词命中但与关键词核心语境冲突，脚本已扣分并禁止其直接成为目标类目；若提示“叶子类目缺修饰词已拦截”，表示关键词修饰词只在父级出现、叶子类目只命中通用形态词，且标题强匹配不足；若提示“待 Codex 语义复核”，表示需人工/Codex 判断是否同产品同功能后才救回。
+  </div>
+  <div class="scroll-table">
+    <table>
+      <tr><th>#</th><th>非目标被过滤类目</th><th>父体数量</th><th>排除占比</th><th>类目相关分</th><th>原始分/扣分</th><th>提示</th><th>评分原因</th></tr>
       ${importantRows.map((row, index) => `
       <tr>
         <td>${index + 1}</td>
@@ -625,16 +811,18 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
         <td>${row.count}</td>
         <td>${(row.share * 100).toFixed(1)}%</td>
         <td>${row.score == null ? '--' : row.score.toFixed(1)}</td>
+        <td>${row.baseScore == null ? '--' : `${row.baseScore.toFixed(1)} / ${row.contextConflictPenalty > 0 ? `-${row.contextConflictPenalty.toFixed(1)}` : '--'}`}</td>
         <td>${escapeHtml(row.flags.length ? row.flags.join('；') : '人工复核')}</td>
         <td style="min-width:240px;white-space:normal;line-height:1.5;color:#666;">${escapeHtml(row.reason || '--')}</td>
       </tr>`).join('')}
     </table>
   </div>
-</div>`;
+</div>` : '';
+  return `${targetRowsBlock}${nonTargetRowsBlock}`;
 }
 
 const rawTotal = jsonData.rawTotal || data.length;
-const keywordIntentRescuedCount = data.filter(d => d.keywordIntentRescued).length;
+const keywordIntentRescuedCount = data.filter(d => d.codexSemanticReviewRescued).length;
 
 // Parse listing age. Prefer listingAge, fall back to listingDate.
 function parseAge(d) {
@@ -1690,6 +1878,7 @@ const replacements = {
   '{{REFERENCE_CATEGORY_SCOPE}}': referenceCategoryScopeText,
   '{{REFERENCE_CATEGORY_MATCH_SUMMARY}}': referenceCategoryMatchSummary,
   '{{RESCUE_CATEGORIES}}': rescueCategoryDisplay,
+  '{{PRODUCT_CODEX_REVIEW_SUMMARY}}': productCodexReviewSummary,
   '{{RESCUE_PRICE_RULE}}': rescuePriceRuleText,
   '{{ALL_COUNT}}': jsonData.allCount || 0,
   '{{FILTERED_COUNT}}': data.length,
@@ -2059,9 +2248,13 @@ replacements['{{EXCLUDED_ROWS}}'] = excluded.map((d, i) => {
   const fullTitle = productTitle(d);
   const shortTitle = fullTitle.length > 140 ? fullTitle.substring(0, 140) + '...' : fullTitle;
   const asinCell = d.asin ? `<a href="https://www.amazon.com/dp/${escapeHtml(d.asin)}" target="_blank">${escapeHtml(d.asin)}</a>` : '-';
+  const codexExcludedReason = d.codexSemanticReviewDecision?.reason
+    ? `产品级 Codex 明确排除：${d.codexSemanticReviewDecision.reason}`
+    : '产品级 Codex 明确排除';
   const reason = d.keywordIntentRescueRejectedReason
-    ? '标题意图救回失败：价格超出目标类目区间'
-    : (d.targetCategoryTitleIntentRejected ? '目标宽类目标题意图不匹配' : '非目标类目');
+    ? '旧标题意图救回失败：价格超出目标类目区间'
+    : (d.codexSemanticReviewExcluded ? codexExcludedReason : null)
+      || (d.targetCategoryTitleIntentRejected ? '目标宽类目标题意图不匹配' : '非目标类目');
   return '<tr><td>' + (i + 1) + '</td><td>' + asinCell + '</td><td style="min-width:360px;max-width:720px;white-space:normal;line-height:1.5;" title="' + escapeHtml(fullTitle) + '">' + escapeHtml(shortTitle) + '</td><td style="font-size:11px;color:#999;">' + escapeHtml(d.category || '未识别') + '</td><td style="font-size:12px;color:#666;">' + escapeHtml(reason) + '</td></tr>';
 }).join('\n');
 
@@ -2073,7 +2266,7 @@ const kwSourceRows = kwSourceData.map((k, i) =>
 
 // Product detail rows.
 replacements['{{PRODUCT_ROWS}}'] = data.sort((a, b) => a.bsr - b.bsr).map((d, i) =>
-  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + (d.keywordIntentRescued ? '<span style="color:#ad6800;font-weight:600;">标题意图救回</span>' : (d.targetCategoryTitleIntentRequired ? '<span style="color:#096dd9;font-weight:600;">目标类目+标题意图</span>' : '目标类目')) + '</td><td>' + childAsinCountExcludingRepresentative(d) + '</td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + parseReviewCount(d).toLocaleString() + ' / ' + (d.ratings || '0') + '</td><td>' + d.brand + '</td></tr>'
+  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + (d.codexSemanticReviewRescued ? '<span style="color:#ad6800;font-weight:600;">产品级 Codex 救回</span>' : (d.keywordIntentRescued ? '<span style="color:#ad6800;font-weight:600;">旧标题意图救回</span>' : (d.targetCategoryTitleIntentRequired ? '<span style="color:#096dd9;font-weight:600;">目标类目+标题意图</span>' : '目标类目'))) + '</td><td>' + childAsinCountExcludingRepresentative(d) + '</td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + parseReviewCount(d).toLocaleString() + ' / ' + (d.ratings || '0') + '</td><td>' + d.brand + '</td></tr>'
 ).join('\n');
 replacements['{{KW_SOURCE_ROWS}}'] = kwSourceRows;
 

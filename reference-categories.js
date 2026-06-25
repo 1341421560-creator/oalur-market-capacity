@@ -77,8 +77,8 @@ function buildReferenceCategorySelectionSummary(referenceCategories = [], catego
     }));
   const unmatchedCategories = normalizedReferences.filter(category => !matchedBy.has(category.toLowerCase()));
   return {
-    mode: normalizedReferences.length ? 'direct-target' : 'none',
-    scope: normalizedReferences.length ? 'direct-target-category-only' : 'none',
+    mode: normalizedReferences.length ? 'target-category-review-first' : 'none',
+    scope: normalizedReferences.length ? 'target-category-codex-review; product-level-rescue-only-if-not-target' : 'none',
     matchedCount: matchedCategories.length,
     unmatchedCount: unmatchedCategories.length,
     matchedCategories,

@@ -295,8 +295,13 @@ function scoreCategoryForKeyword(category, items, keyword) {
     reason: reasons.join('; '),
     tokenHits: [...new Set([...categoryTokenHits, ...leafTokenHits])],
     shapeHit,
+    leafShapeHit,
     modifierHits,
+    leafModifierHits,
+    allKeywordHit,
     functionalEquivalent,
+    titleAllCount: titleAll,
+    titleAnyCount: titleAny,
     titleAllRate: Math.round(titleAllRate * 1000) / 1000,
     titleAnyRate: Math.round(titleAnyRate * 1000) / 1000
   };
@@ -324,33 +329,23 @@ function listingMatchesKeywordIntent(item, keywords) {
 }
 
 function hasTargetCategoryEvidence(detail) {
-  if (!detail.referenceCategoryMatch) return true;
-  if (detail.referenceCategoryMatchType === 'exact') {
-    return detail.baseScore >= 35 && (
-      detail.shapeHit ||
-      detail.titleAllRate >= 0.25 ||
-      detail.titleAnyRate >= 0.7
-    );
-  }
-  if (detail.referenceCategoryMatchType === 'path') {
-    return detail.baseScore >= 70 && (
-      detail.titleAllRate >= 0.3 ||
-      (detail.shapeHit && detail.contextMatch !== false)
-    );
-  }
-  return detail.baseScore >= 110;
+  return Boolean(detail && detail.category);
 }
 
 function isReferenceConfirmedTarget(detail) {
-  return detail.referenceCategoryMatch &&
-    detail.referenceCategoryMatchType === 'exact' &&
-    hasTargetCategoryEvidence(detail);
+  return false;
+}
+
+function isReferenceSemanticReviewCategory(detail) {
+  return false;
 }
 
 function isTargetCategoryCandidate(detail) {
   return (
     detail.category &&
     !isUnknownCategory(detail.category) &&
+    !detail.leafModifierMismatch &&
+    !isReferenceSemanticReviewCategory(detail) &&
     (!detail.functionalEquivalent || isReferenceConfirmedTarget(detail)) &&
     hasTargetCategoryEvidence(detail)
   );
@@ -358,8 +353,8 @@ function isTargetCategoryCandidate(detail) {
 
 function selectTargetCategories(products, keywords, options = {}) {
   const referenceCategories = Array.isArray(options.referenceCategories) ? options.referenceCategories.filter(Boolean) : [];
-  const referenceTargetCategories = [...new Set(referenceCategories.map(category => String(category || '').trim()).filter(Boolean))];
-  const referenceTargetSet = new Set(referenceTargetCategories);
+  const referenceReviewCategories = [...new Set(referenceCategories.map(category => String(category || '').trim()).filter(Boolean))];
+  const totalProductCount = Array.isArray(products) ? products.length : 0;
   const grouped = new Map();
   for (const item of products) {
     const category = item.category || '未识别';
@@ -376,17 +371,37 @@ function selectTargetCategories(products, keywords, options = {}) {
     }));
     const best = perKeyword.reduce((a, b) => (b.score > a.score ? b : a), perKeyword[0]);
     const referenceMatch = referenceCategoryMatchInfo(category, referenceCategories);
-    const score = Math.round(best.score * 10) / 10;
+    const contextConflictPenalty = best.contextMatch === false && !best.allKeywordHit
+      ? Math.round(((best.modifierHits || 0) * 20 + (best.leafModifierHits || 0) * 8) * 10) / 10
+      : 0;
+    const leafModifierMismatch = best.shapeHit &&
+      best.leafShapeHit &&
+      best.modifierHits > 0 &&
+      best.leafModifierHits === 0 &&
+      best.titleAllRate < 0.35;
+    const score = Math.round((best.score - contextConflictPenalty) * 10) / 10;
+    let scoreReason = contextConflictPenalty
+      ? `${best.reason}; context conflict penalty -${contextConflictPenalty}`
+      : best.reason;
+    if (leafModifierMismatch) {
+      scoreReason = `${scoreReason}; leaf modifier mismatch block`;
+    }
     return {
       category,
       count: items.length,
+      categoryShare: totalProductCount ? Math.round((items.length / totalProductCount) * 1000) / 1000 : 0,
       score,
       baseScore: best.score,
+      contextConflictPenalty,
+      leafModifierMismatch,
       selectedKeyword: best.keyword,
-      reason: [best.reason, referenceMatch.referenceCategoryMatchReason].filter(Boolean).join('; '),
+      reason: [scoreReason, referenceMatch.referenceCategoryMatchReason].filter(Boolean).join('; '),
       tokenHits: best.tokenHits,
       shapeHit: best.shapeHit,
+      leafShapeHit: best.leafShapeHit,
       modifierHits: best.modifierHits,
+      leafModifierHits: best.leafModifierHits,
+      allKeywordHit: best.allKeywordHit,
       contextMatch: best.contextMatch,
       contextHits: best.contextHits,
       contextTokenCount: best.contextTokenCount,
@@ -395,6 +410,8 @@ function selectTargetCategories(products, keywords, options = {}) {
       contextMatchedTokens: best.contextMatchedTokens,
       competingContextTokens: best.competingContextTokens,
       functionalEquivalent: best.functionalEquivalent,
+      titleAllCount: best.titleAllCount,
+      titleAnyCount: best.titleAnyCount,
       titleAllRate: best.titleAllRate,
       titleAnyRate: best.titleAnyRate,
       ...referenceMatch,
@@ -405,8 +422,13 @@ function selectTargetCategories(products, keywords, options = {}) {
 
   const selected = details.filter(d => (
     isTargetCategoryCandidate(d) &&
+    !d.leafModifierMismatch &&
+    !isReferenceSemanticReviewCategory(d) &&
     (
-      (d.score >= 110 && (d.count >= 3 || d.score >= 180)) ||
+      (d.score >= 110 && (d.count >= 3 || d.score >= 180) && (
+        d.contextMatch !== false ||
+        d.allKeywordHit
+      )) ||
       (d.shapeHit && d.contextMatch !== false && d.count >= 20 && d.titleAllRate >= 0.5)
     )
   ));
@@ -436,11 +458,16 @@ function selectTargetCategories(products, keywords, options = {}) {
     d.category &&
     !isUnknownCategory(d.category) &&
     !selected.some(item => item.category === d.category) &&
-    !referenceTargetSet.has(d.category) &&
     d.count >= 5 &&
     d.titleAllRate >= 0.35 &&
     d.titleAnyRate >= 0.85 &&
     d.score >= 20
+  ));
+  const highShareTitleRescueSelected = details.filter(d => (
+    d.category &&
+    !isUnknownCategory(d.category) &&
+    !selected.some(item => item.category === d.category) &&
+    d.categoryShare > 0.05
   ));
   const titleIntentRescueSet = new Set([
     ...functionalEquivalentRescueSelected.map(d => d.category),
@@ -448,6 +475,7 @@ function selectTargetCategories(products, keywords, options = {}) {
     ...offContextShapeRescueSelected.map(d => d.category),
     ...highTitleIntentRescueSelected.map(d => d.category)
   ]);
+  const highShareTitleRescueSet = new Set(highShareTitleRescueSelected.map(d => d.category));
 
   const fallback = selected.length
     ? selected
@@ -465,32 +493,33 @@ function selectTargetCategories(products, keywords, options = {}) {
     )).slice(0, 5);
     return closeMatches.length ? closeMatches : fallback;
   })();
-  const selectedCategories = referenceTargetCategories.length
-    ? [
-      ...referenceTargetCategories,
-      ...expandedFallback
-        .filter(d => !d.functionalEquivalent || isReferenceConfirmedTarget(d))
-        .map(d => d.category)
-    ].filter((category, index, arr) => category && arr.indexOf(category) === index)
-    : expandedFallback
-      .filter(d => !d.functionalEquivalent || isReferenceConfirmedTarget(d))
-      .map(d => d.category);
+  const selectedCategories = expandedFallback
+    .filter(d => !d.functionalEquivalent || isReferenceConfirmedTarget(d))
+    .map(d => d.category);
   const selectedSet = new Set(selectedCategories);
 
   return {
     targetCategory: selectedCategories[0] || '',
     targetCategories: selectedCategories,
+    referenceReviewCategories,
+    referenceSemanticReviewCategories: [],
     categorySelection: details.map(d => ({
       category: d.category,
       count: d.count,
+      categoryShare: d.categoryShare,
       score: d.score,
       baseScore: d.baseScore,
+      contextConflictPenalty: d.contextConflictPenalty,
+      leafModifierMismatch: d.leafModifierMismatch,
       selected: selectedSet.has(d.category),
       selectedKeyword: d.selectedKeyword,
       reason: d.reason,
       tokenHits: d.tokenHits,
       shapeHit: d.shapeHit,
+      leafShapeHit: d.leafShapeHit,
       modifierHits: d.modifierHits,
+      leafModifierHits: d.leafModifierHits,
+      allKeywordHit: d.allKeywordHit,
       contextMatch: d.contextMatch,
       contextHits: d.contextHits,
       contextTokenCount: d.contextTokenCount,
@@ -500,6 +529,12 @@ function selectTargetCategories(products, keywords, options = {}) {
       competingContextTokens: d.competingContextTokens,
       functionalEquivalent: d.functionalEquivalent,
       titleIntentRescueCandidate: titleIntentRescueSet.has(d.category),
+      highShareTitleRescueCandidate: highShareTitleRescueSet.has(d.category),
+      highShareTitleRescueReason: highShareTitleRescueSet.has(d.category)
+        ? `high-share non-target category: category share ${(d.categoryShare * 100).toFixed(1)}% > 5%; local Codex must decide whether listings are the same product/function attributes as the input keyword`
+        : '',
+      titleAllCount: d.titleAllCount,
+      titleAnyCount: d.titleAnyCount,
       titleAllRate: d.titleAllRate,
       titleAnyRate: d.titleAnyRate,
       referenceCategoryMatch: d.referenceCategoryMatch,

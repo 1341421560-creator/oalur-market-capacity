@@ -36,7 +36,8 @@ const SPEC_MODIFIER_TOKENS = new Set([
   'gallon', 'gal', 'quart', 'qt', 'oz', 'ounce', 'liter', 'litre', 'ml', 'lb', 'inch',
   'ft', 'cm', 'mm', 'small', 'large', 'xl', 'mini', 'wide', 'tall', 'clear', 'white',
   'black', 'silver', 'gold', 'plastic', 'glass', 'metal', 'stainless', 'steel', 'wood',
-  'wooden', 'pack', 'set', 'with'
+  'wooden', 'silicone', 'titanium', 'pack', 'set', 'with', 'lid',
+  'electric', 'automatic', 'digital', 'manual', 'cordless', 'rechargeable', 'portable'
 ]);
 
 const GOOGLE_TRENDS_CORE_SYNONYMS = {

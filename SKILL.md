@@ -23,7 +23,8 @@
 ## 输入
 - **产品关键词**：亚马逊搜索词、长尾词，如 "Biscuit Cutter"、"Silicone Spatula" 等
 - **多关键词**：英文逗号分隔，如 "Cookie Cutter,Biscuit Cutter"，用于合并同品类不同关键词的数据
-- **参考类目（可选）**：只参与初始目标类目/待救回类目选择，不直接救回 ASIN，不跳过标题意图或价格守卫，不参与后续评分。CLI 使用 `--reference-categories "类目1||类目2"`；文件使用 `--reference-categories-file output/任务/reference-categories.txt`，每行一个类目。
+- **参考类目（可选）**：作为类目级 Codex 判断上下文，不直接成为目标类目，也不直接成为产品级救回类目。参考类目必须和抓取类目一起接受目标类目判断；如果参考匹配类目没有被判为目标类目，才可作为非目标类目的产品级 Codex 语义复核触发信号。CLI 使用 `--reference-categories "类目1||类目2"`；文件使用 `--reference-categories-file output/任务/reference-categories.txt`，每行一个类目。
+- **批量 JSON（可选）**：每个产品建议包含 `{ asin, category, categories, keyword, matchType, hasExactMatch, score, title }`。`keyword` 是市场分析关键词；`title`、`category`、`categories`、参考类目和抓取类目用于本地 Codex 判断。`asin` 只作为追踪标识，不是类目级判断的必要条件。
 
 ## 多关键词分析流程
 
@@ -45,14 +46,14 @@ node skills/oalur-market-capacity/extract-data.js "Cookie Cutter,Biscuit Cutter"
 node skills/oalur-market-capacity/extract-data.js "Cookie Cutter" 10000 output/日期-Cookie-Cutter/data/cookie-data.json
 node skills/oalur-market-capacity/extract-data.js "Biscuit Cutter" 10000 output/日期-Biscuit-Cutter/data/biscuit-data.json
 
-# 合并去重（ASIN去重 + 父体 Listing 聚合 + 类目/标题意图过滤 + 价格守卫）
+# 合并去重（ASIN去重 + 父体 Listing 聚合 + 类目级 Codex 判断 + 非目标类目产品级 Codex 救回）
 node skills/oalur-market-capacity/merge-data.js output/日期-Cookie-Cutter/data/cookie-data.json output/日期-Biscuit-Cutter/data/biscuit-data.json --output output/日期-merged-data/data/merged-data.json
 
 # 生成报告
 node skills/oalur-market-capacity/generate-report.js output/日期-merged-data/data/merged-data.json
 ```
 
-`merge-data.js` 合并时会重新执行目标类目选择、功能等价候选类目救回、标题意图判断和救回价格守卫，过滤口径必须与 `extract-data.js` / `refilter-data.js` 保持一致。输出路径优先使用 `--output` 或 `--out` 指定；如果省略输出路径，脚本会自动写到 `output/日期-merged-data/data/merged-data.json`，不会把已存在的最后一个输入文件当输出覆盖。旧式“最后一个不存在的路径作为输出文件”仅作为兼容模式，不建议继续使用。脚本读取 JSON 时会兼容 UTF-8 BOM。
+`merge-data.js` 合并时会重新执行规则证据评分、类目级 Codex 判断、目标类目直接命中、非目标类目产品级 Codex 语义救回，并复用同一套决策文件加载逻辑。过滤口径必须与 `extract-data.js` / `refilter-data.js` 保持一致。输出路径优先使用 `--output` 或 `--out` 指定；如果省略输出路径，脚本会自动写到 `output/日期-merged-data/data/merged-data.json`，不会把已存在的最后一个输入文件当输出覆盖。旧式“最后一个不存在的路径作为输出文件”仅作为兼容模式，不建议继续使用。脚本读取 JSON 时会兼容 UTF-8 BOM。
 
 ### 不推荐方式：单进程连抓
 旧版本支持在同一页面会话内连续抓取多个关键词，但 Oalur 页面状态可能残留，导致后续关键词结果与单独搜索不一致。当前默认不再使用该方式。
@@ -148,20 +149,17 @@ node skills/oalur-market-capacity/extract-data.js "dishwasher cleaner tablets" 2
 ```
 
 
-脚本自动完成：关键词输入、BSR 设置、勾选查看其他变体、翻页提取、ASIN 去重、父体 Listing 聚合、类目/标题意图过滤。
+脚本自动完成：关键词输入、BSR 设置、勾选查看其他变体、翻页提取、ASIN 去重、父体 Listing 聚合、类目级 Codex 目标判断、非目标类目产品级 Codex 语义救回。
 
 #### 参考类目输入
 
-参考类目只作用于最初的类目筛选模块：
+参考类目是本地 Codex 的判断上下文，不是白名单：
 
-1. 如果输入参考类目，`selectTargetCategories` 会对候选类目做参考匹配加权，匹配类型、加权分和命中来源写入 `categorySelection` / `referenceCategorySelection`。
-2. 参考类目不是白名单，不会直接把 ASIN 救回，也不会跳过标题意图或价格守卫。
-3. 其它类目仍按原评分规则选择目标类目和救回候选类目；参考类目只影响初始类目选择阶段。
-4. 最终 `targetCategories` 仍由评分门槛、类目证据和参考类目加权共同决定，不是简单把参考类目并入结果。
-5. 非目标类目如果进入 `equivalentCandidateCategories`，后续必须通过标题意图救回；标题意图救回仍受价格守卫约束。
-6. 只有产品自身类目命中 `targetCategories` 时才直进；其它类目仍需走救回流程。
-7. 参考类目不进入利润、竞争、新品、季节性或最终评分。
-8. 多关键词、历史新品抓取、`merge-data.js` 和 `refilter-data.js` 都支持同样参数，保证初始类目筛选口径一致。
+1. 参考类目必须进入类目级 Codex 判断。`target-category-codex-review.js` 会把抓取到的所有 Amazon 类目、参考匹配类目，以及没有抓到行的手工参考类目写入 `*-target-category-codex-review.json`。
+2. 参考类目不会直接进入 `targetCategories`。只有类目级 Codex 明确判为 `target/include/yes`，该类目才成为目标类目。
+3. 如果参考匹配类目被判为 `exclude` 或 `review`，它才作为非目标类目的产品级 Codex 语义复核触发信号，进入 `*-codex-semantic-review.json` 候选。
+4. 参考类目不会跳过产品级判断，不会直接救回 ASIN，也不参与利润、竞争、新品、季节性或最终评分。
+5. 多关键词、历史新品抓取、`merge-data.js` 和 `refilter-data.js` 都必须使用同样参考类目规则，保证换对话窗口也不会走旧逻辑。
 
 #### JSON 批量顺序执行
 
@@ -174,6 +172,9 @@ node skills/oalur-market-capacity/run-keyword-json-batch.js output/来源/data/k
 批量脚本读取顶层 `products[]`，每个产品使用：
 - `keyword` 作为市场分析关键词。
 - `[category, ...categories]` 合并去重后作为参考类目。
+- `title` 作为本地 Codex 判断核心产品/功能属性的重要上下文。
+- `asin` 只用于跟踪和决策文件索引；类目级 Codex 判断不依赖 ASIN，主要看关键词、标题、参考类目、抓取类目、类目全路径和样本标题。
+- `matchType`、`hasExactMatch`、`score` 可以作为证据层，不作为最终目标类目裁判。
 - `--start` 使用 1-based 序号，`--start 2 --limit 1` 表示只跑第二个产品。
 - 默认 BSR 为 `20000`；如需统一调整，传 `--bsr 数值`。
 - 默认开启断点续跑。脚本会在批次目录写入 `batch-progress.json`，记录当前产品序号、当前步骤、已完成/失败状态。
@@ -254,13 +255,13 @@ node skills/oalur-market-capacity/generate-report.js output/日期-关键词/dat
 
 ### Step 3.5: 只更新过滤逻辑时离线重筛
 
-如果当前数据已经完整抓取过，例如 `data + excluded` 中已经包含所有父体 Listing 和 `variantRows`，修改类目过滤、标题意图、同义词、宽类目二次过滤规则后，禁止重新打开 Oalur 抓取。先用现有 JSON 离线重筛：
+如果当前数据已经完整抓取过，例如 `data + excluded` 中已经包含所有父体 Listing 和 `variantRows`，修改类目判断、Codex 决策、语义救回条件、同义词或报告口径后，禁止重新打开 Oalur 抓取。先用现有 JSON 离线重筛：
 
 ```bash
 node skills/oalur-market-capacity/refilter-data.js output/日期-关键词/data/数据文件.json
 ```
 
-该脚本会读取现有 `data` 和 `excluded`，合并为完整父体集合，重新计算 `targetCategories`、`categorySelection`、`data`、`excluded`，并覆盖输出 JSON。随后只需要重新执行 `generate-report.js` 和 `generate-child-asin-report.js`。只有原始页数不完整、缺少 `excluded`、缺少 `variantRows`，或需要补新月份/新关键词时，才重新抓取 Oalur。
+该脚本会读取现有 `data` 和 `excluded`，合并为完整父体集合，重新计算规则证据评分，加载并应用 `*-target-category-codex-review.json`，再加载并应用 `*-codex-semantic-review.json`，最后重写 `targetCategories`、`categorySelection`、`codexSemanticReviewCandidates`、`data`、`excluded`。随后只需要重新执行 `generate-report.js` 和 `generate-child-asin-report.js`。只有原始页数不完整、缺少 `excluded`、缺少 `variantRows`，或需要补新月份/新关键词时，才重新抓取 Oalur。
 
 ### Step 4: 提取季节性数据
 
@@ -271,7 +272,7 @@ node skills/oalur-market-capacity/extract-seasonality.js "关键词" output/日�
 ```
 
 脚本自动完成：
-1. **Google Trends 5年搜索趋势**：从 Google Trends 网页提取公开数据（不需要登录，不截图）
+1. **Google Trends 5年搜索趋势**：直接打开固定页面 `https://trends.google.com/trends/explore?date=today%205-y&geo=US&hl=zh-CN` 抓取公开数据（不需要登录，不走 Google Trends API，避免反扒）
    - 如果原始长尾词 Google Trends 数据过于稀疏（例如 5 年周数据非零点 `<24` 或非零率 `<15%`），不能直接用该数据判断季节性。
    - 此时允许本地 agent/本地规则从关键词中提取核心词后重试，例如 `fruit basket for kitchen counter` → `fruit basket`。
    - 报告必须展示原始关键词、实际 Google Trends 查询词和降级原因；核心词只用于 Google Trends 季节性验证，不改变 Oalur 搜索词、类目过滤、产品过滤或评分的其他数据源。
@@ -296,7 +297,7 @@ node skills/oalur-market-capacity/extract-seasonality.js "关键词" output/日�
 输入关键词后，`extract-data.js` 会先生成 `keyword-intent-analysis.json`：
 - 如果环境变量 `OPENAI_API_KEY` 可用，尝试使用 OpenAI 兼容接口生成候选词分析。
 - 如果 `OPENAI_API_KEY` 不可用或请求失败，使用本地内置 token 同义词输出兜底分析。
-- 该文件只用于人工复核和后续完善规则，不参与 `targetCategories` 选择，不参与标题意图救回，不改变过滤结果。
+- 该文件只用于人工复核和后续完善规则，不参与 `targetCategories` 最终决策，不参与产品级 Codex 救回，不改变过滤结果。
 - 如需跳过该步骤，可加 `--skip-keyword-intent-analysis`。
 
 ### Step 5: 提取新品存活率历史基准数据
@@ -321,13 +322,14 @@ node skills/oalur-market-capacity/extract-data.js "关键词" BSR上限 output/�
 
 历史数据只用于新品存活率，不需要抓完整历史市场盘。使用 `--survival-baseline auto` 或 `--historical-new-only` 时，脚本必须：
 - 在历史月份查询结果加载后，点击第 9 列“上架时间”的下箭头，按上架时间从新到旧排序。
-- 只保留历史快照时上架 `<6个月` 的产品，作为新品候选集。
+- 补齐缺失上架时间后，只保留历史快照时上架 `<6个月` 的产品，作为新品候选集。
 - 翻页时如果当前页已经没有 `<6个月` 产品，停止继续翻页。
+- 对历史新品候选集继续执行同一套类目级 Codex 目标判断和非目标类目产品级 Codex 语义救回；只有过滤后的历史核心产品才能进入 6 个月纯新父体样本。
 - 输出 JSON 标记 `historicalNewOnly: true`，避免误认为是完整历史市场数据。
 
 ⚠️ 如果缓存文件的时间范围不在推荐正常窗口内，`generate-report.js` 会打印警告并在报告中写明“机械 6 个月候选月”和“推荐基准窗口”，但仍使用当前传入数据生成报告。
 
-⚠️ **新品存活率边界情况**：如果推荐历史基准窗口内该 BSR 范围没有上架 <6 个月的纯新父体 Listing（即 `histNewProducts.length === 0`），说明当时没有纯新父体存在，不存在存活率可计算。此时报告会显示「该 BSR 范围内无历史纯新父体」，而不是 0% 存活率。
+⚠️ **新品存活率边界情况**：如果推荐历史基准窗口内该 BSR 范围没有上架 <6 个月的纯新父体 Listing（即 `histNewProducts.length === 0`），说明当时没有可验证的历史核心纯新父体，不存在存活率可计算。此时报告会显示「该 BSR 范围内无历史纯新父体」，而不是 0% 存活率。
 
 ### Step 6: 提取 CPC/客单价比值（广告成本快判）
 
@@ -503,76 +505,62 @@ output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_子ASIN明细.html
 - 子 ASIN 数（不含代表 ASIN 本身）
 - 同父体 ASIN 总数
 - 所有同父体 ASIN 的标题、类目、销量、销售额、BSR、小类排名、价格、上架时间、Ratings 数、品牌
-- “匹配依据”列显示 `目标类目` / `标题意图救回` / `未命中`
+- “匹配依据”列显示 `目标类目` / `产品级 Codex 救回` / `未命中`
 
-## 目标类目与标题意图过滤
+## 目标类目与 Codex 语义救回
 
-不要再用“数量最多的类目”作为唯一目标类目。当前类目过滤由 `category-selector.js` 计算关键词相关性分，并允许“功能等价候选类目 + 单 ASIN 标题意图”二次保留。
+目标类目不再由分数最终裁判。`category-selector.js` 的分数、占比、标题命中率、`contextMatch`、`functionalEquivalent` 等只作为证据层和自动候选层；最终目标类目以本地 Codex 对 Amazon 类目归属的判断为准。
 
-目标类目可以是一个，也可以是多个。只要类目进入 `targetCategories`，它就是目标类目；父体或任一子 ASIN 命中目标类目时，直接进入目标匹配池，不再做标题意图二次过滤。
+固定执行顺序：
+1. JS 抓取并去重所有 Amazon 类目，保留类目全路径、父体数量、占比、规则分数和样本标题。
+2. `selectTargetCategories` 先生成规则证据和 provisional 候选，但这些候选只是给 Codex 看的证据。
+3. `target-category-codex-review.js` 生成 `*-target-category-codex-review.json`。本地 Codex 必须读取输入关键词、标题、参考类目、所有抓取类目、类目分数/占比和样本 listing 标题，判断“该关键词核心产品是否天然属于 Amazon US 的这个类目”。
+4. 类目级决策只接受 `target/include/yes`、`exclude/no`、`review`。只有 `target/include/yes` 会写入最终 `targetCategories`。
+5. 父体 Listing 或任一子 ASIN 命中最终 `targetCategories` 时，直接进入最终 listing 池，并清理旧的 `codexSemanticReviewExcluded`、`codexSemanticReviewRescued`、`codexSemanticReviewDecision`、`targetCategoryTitleIntentRejected` 标记。
+6. 已命中目标类目的 listing 不参与产品级 Codex 语义复核，也不能因为产品级排除决策被踢出。
+7. 非目标类目 listing 默认进入 `excluded`。只有满足产品级 Codex 语义复核触发条件并被本地 Codex 明确判为目标产品，才救回最终 listing 池。
 
-标题意图只用于非目标类目的候选救回：
-- 未进入 `targetCategories` 的功能等价候选类目，必须通过标题意图 + 价格守卫才能进入分析池。
-- 已进入 `targetCategories` 的目标类目不能再因为标题缺少某个修饰词被排除。
+类目级 Codex 判断不需要额外 ASIN 信息。ASIN 只用于追踪、去重和后续产品级索引；判断核心依赖关键词、listing 标题、类目全路径、参考类目、规则证据和样本标题。
 
-### 类目评分
+### 类目证据层
 
 关键词会拆成：
 - 修饰词：除最后一个词以外的 token，例如 `Coffee Spoons` 的 `coffee`
 - 产品形态词：最后一个 token，例如 `spoon`
 - 形态同义词：例如 `spoon` 可扩展为 `spoon/scoop`
 
-类目分数主要由以下部分组成：
-- 类目路径包含全部关键词 token：+85
-- 类目路径命中产品形态：+35
-- 类目叶子类目命中产品形态：+20
-- 类目路径每命中一个修饰词：+24
-- 叶子类目每命中一个修饰词：+10
-- 类目下标题强匹配率：最高 +45
-- 类目下标题部分匹配率：最高 +12
-- 类目产品数量权重：最高 +14
+类目分数主要由以下部分组成，但不得直接作为最终裁判：
+- 类目路径包含全部关键词 token。
+- 类目路径或叶子类目命中产品形态。
+- 类目路径或叶子类目命中修饰词。
+- 类目下标题强匹配率和部分匹配率。
+- 类目产品数量、类目占比、参考类目匹配和上下文冲突。
 
-扣分规则：
-- 只命中产品形态，但没有修饰词，且标题强匹配率 <35%：-35
-- 只命中修饰词，但没有产品形态，且标题强匹配率 <20%：-16
-- 修饰词和产品形态都没命中：-60
+`contextMatch=false` 表示类目上下文与关键词核心意图冲突，常见于只在父级路径命中泛词、叶子类目实际是另一种产品或功能。它应作为 Codex 判断风险信号，不能靠高分或高占比直接越过。
 
-目标类目选择门槛：
-- 分数 >= 110，且产品数 >= 3
-- 或分数 >= 180，即使产品数少于 3 也可选
-- 如果没有任何类目达标，才回退选分数最高的一个类目
+### 产品级 Codex 语义复核
 
-### 功能等价候选类目
+产品级 Codex 只处理非目标类目的 listing。触发信号来自 `codex-semantic-review.js`，候选会写入 `*-codex-semantic-review.json`：
+- `highShareTitleRescueCandidate`：非目标、非 unknown 类目，父体数量占比 `>5%`。
+- 高相关分：非目标类目 `score >=110`，或 `score >=70` 且 `count >=3`。
+- `titleIntentRescueCandidate`：非目标类目中多个 listing 标题强匹配输入关键词意图。
+- `functionalEquivalent`：非目标类目看起来功能相邻或等价，但不能整类纳入，必须逐个产品复核。
+- 参考匹配类目经过类目级 Codex 判断后不是目标类目。
 
-像 `Coffee Spoons` 这类搜索，`Teaspoons`、`Iced Tea Spoons`、`Measuring Spoon Sets` 可能是功能等价候选，但不能整类直接纳入目标类目。
+产品级 Codex 必须逐个父体 Listing 判断“标题和类目里的产品核心词、核心功能、购买/使用意图是否与输入关键词代表的 Amazon 产品一致”。只有明确写成 `target/include/yes` 的 listing 才救回，设置：
+- `codexSemanticReviewRescued: true`
+- `codexSemanticReviewDecision`
+- `targetMatchedCategories`
 
-候选条件：
-- 类目路径命中产品形态词或其同义词
-- 类目路径没有命中修饰词
-- 类目下标题强匹配率 >=35%
-- 标题部分匹配率 >=70%
-- 叶子类目不能是 `rest/holder/stand/rack/organizer/case/cover` 这类配件类目
-
-候选类目内的单个父体 Listing 还必须通过标题意图：
-- 标题必须命中产品形态词，例如 `spoon/scoop`
-- 标题必须命中修饰词或其意图同义词，例如 `coffee/espresso/demitasse/cappuccino/latte/moka`
-- `Chocolate Molds` 场景中，`chocolate` 的意图同义词包括 `candy/gummy/caramel/fondant/bonbon/truffle`
-
-通过该规则保留的父体 Listing 必须设置：
-- `keywordIntentRescued: true`
-- `targetMatchedChildAsins`
-- 报告中“过滤来源”列显示 **标题意图救回**
-
-示例：
-- `B091CHRKVH`：类目是 `Teaspoons`，标题含 `Coffee/Tea Spoons`，可被标题意图救回。
-- `B0C78BBX27`：类目也是 `Teaspoons`，但标题只有泛 `Spoon Set`，不命中 coffee/espresso 意图，应排除。
+明确写成 `exclude/no` 的产品级决策只作用于非目标类目 listing；目标类目 listing 不加载产品级排除。
 
 ## 新品统计口径
 
 父体 Listing 的代表 ASIN 仍然取 BSR 最好的子 ASIN，但新品统计不能只看代表 ASIN。
 
 新品分析必须按父体 Listing 统计，并检查父体下目标相关子 ASIN：
-- 只要目标相关子 ASIN 中存在 `<6个月`，该父体 Listing 计入新品父体。
+- 所有新品、纯新父体、历史存活率判断都必须基于最终过滤后的 listing 池，即 `data` 中的目标类目直接命中产品 + 产品级 Codex 救回产品。
+- 只要最终过滤池内的目标相关子 ASIN 中存在 `<6个月`，该父体 Listing 计入新品父体。
 - 如果新品不是代表 ASIN，而是父体下某个子 ASIN，报告标记为 **父体新品子ASIN**。
 - `<12个月` 分析同理，标记为 **父体<12月子ASIN**。
 - 如果代表 ASIN 自身 `<12个月`，且目标相关子 ASIN 全部 `<12个月`，在 `<12个月` 列表中标记为 **纯新父体**。
@@ -580,7 +568,7 @@ output/YYYY-MM-DD-关键词/reports/YYYY-MM-DD_关键词_子ASIN明细.html
 - `<6个月`当前纯新父体销量承接和 `<12个月`近1年产品销量分析的主结论必须基于 **纯新父体** 的数量、销量和市场占比；父体新品子 ASIN / 父体 `<12月` 子 ASIN 仅作为辅助观察。
 
 过滤后的 ASIN 表必须包含：
-- 过滤来源：`目标类目` / `标题意图救回`
+- 过滤来源：`目标类目` / `产品级 Codex 救回`
 - 子 ASIN 数（同父体下除当前代表 ASIN 以外的 ASIN 数，不含代表 ASIN 本身）
 
 新品销量表必须包含：
@@ -655,8 +643,8 @@ Oalur 站内峰值月份：[月份列表]
 7. **查看其他变体**：必须开启。第一页抓取前和每次翻页后都要确认 `.var-sku .el-checkbox` 已勾选；如果无法勾选则停止执行。
 8. **分页翻页**：点击 `.el-pager .number` 后必须等待内容变化（比较整页 ASIN 集合，不能只比较首行），不能固定等待
 9. **去重与聚合**：先按 ASIN 去重（相同 ASIN 去重，不按相同父体 PASIN 去重），再按父体聚合；代表 ASIN 取父体下大类 BSR 最好的子 ASIN；销量/销售额优先取代表父体行数值，只有代表行缺失或为 0 时才按同一行 `子体销量 / 子体销售额` 与子 ASIN 行求和兜底，Ratings 按共享/独立评分规则计算。
-10. **类目过滤**：使用关键词相关性评分选择一个或多个目标类目。进入 `targetCategories` 的目标类目直接通过筛选；功能等价候选类目只能通过单 ASIN 标题意图 + 价格守卫救回，不能整类直接纳入。标题意图救回会在主报告和子 ASIN 明细中标记为 `标题意图救回`；已经命中目标类目的产品标记为 `目标类目`。
-11. **销量缺失/低销量处理**：目标匹配产品不再因为月销量 `<200` 或销量缺失移入 `excluded`；这类产品仍进入 `data`，报告中按销量缺失/低销量风险展示。`excluded` 只用于非目标类目、未通过候选救回或价格守卫的产品。
+10. **类目过滤**：规则分数只生成证据层和自动候选层；最终 `targetCategories` 由本地 Codex 类目级判断决定。目标类目 listing 直接进入 `data`，不参与产品级 Codex。非目标类目 listing 默认进入 `excluded`，只有满足候选信号且产品级 Codex 明确 `target/include/yes` 才救回，并在主报告和子 ASIN 明细中标记为 `产品级 Codex 救回`。
+11. **销量缺失/低销量处理**：目标类目直接命中和产品级 Codex 救回产品都不再因为月销量 `<200`、`<250` 或销量缺失移入 `excluded`；这类产品仍进入 `data`，报告中按销量缺失/低销量风险展示。`excluded` 只用于非目标类目且未被产品级 Codex 救回的产品。
 12. **分页上限**：默认最多抓 20 页（约 400 行）。如果 Oalur 结果超过 20 页，脚本必须停止并向用户报告预计页数/行数；用户确认后才允许用 `--allow-over-400` 或 `OALUR_ALLOW_OVER_400=1` 继续抓取。
 13. **并行规则**：可以并行的独立任务要并行，例如 ASIN 趋势每个 ASIN 独立 tab、CPC 样本按小并发池独立 tab 抓取；每个临时 tab/page 必须在 `finally` 中关闭。不能并行同一个 Oalur 筛选表格的翻页抓取，因为分页、筛选条件和“查看其他变体”共享页面状态。
 14. **AI 同义词**：默认只使用内置同义词表。`keyword-intent-analysis.json` 仅作人工审计，不参与过滤；AI/人工分析结果必须经用户确认并写入内置表后才生效。
@@ -677,7 +665,7 @@ Oalur 站内峰值月份：[月份列表]
 1. **不要用 OpenClaw browser tool**：edge profile CDP 连接不稳定，snapshot/evaluate 会超时
 2. **必须用 puppeteer-core 直连**：脚本在本 skill 工程目录下执行，依赖从本地 `node_modules/` 解析
 3. **"查看其他变体"必须开启**：抓取 ASIN/变体明细后按父体 Listing 聚合，竞争数量按父体统计
-4. **必须按类目和标题意图过滤**：Oalur 搜索结果包含大量无关品类，不过滤会导致分析失真。目标类目用评分选择；功能等价候选类目内只保留标题命中搜索意图的 ASIN
+4. **必须按类目级 Codex + 产品级 Codex 救回过滤**：Oalur 搜索结果包含大量无关品类，不过滤会导致分析失真。目标类目由本地 Codex 判断；非目标类目只在触发语义复核候选且本地 Codex 明确救回时保留单个 listing。
 5. **分页必须等内容变化**：点击页码后轮询检查整页 ASIN 集合是否变化（不能只比较首行，否则会误判）
 6. **超过 20 页必须请示**：当前抓取默认最多 20 页。超过 20 页时停止执行并报告，确认后再带 `--allow-over-400` 继续。
 7. **并发抓取必须关闭窗口**：ASIN 趋势和 CPC 可以多开 tab 并行，ASIN 趋势默认并发为 5，可用 `OALUR_ASIN_TREND_CONCURRENCY` 调整但最多 5；默认 CPC 并发为 4，可用 `OALUR_CPC_CONCURRENCY` 调整；抓完必须关闭 tab，不能残留窗口。
@@ -687,7 +675,7 @@ Oalur 站内峰值月份：[月份列表]
 
 ### 季节性分析注意事项
 
-1. **Google Trends 是公开数据**：不需要登录，不需要 CDP 连接，puppeteer 直接访问即可
+1. **Google Trends 是公开网页数据**：不需要登录，不需要 CDP 连接；直接打开 `https://trends.google.com/trends/explore?date=today%205-y&geo=US&hl=zh-CN`，不要长期调用 Trends API。
 2. **Oalur 搜索量和 ASIN 趋势需要 CDP**：需要通过 Edge 浏览器（端口 9222）保持 Oalur 登录态
 3. **ASIN 自动选取**：从 BSR 数据中取上架 >3 年且 BSR 最好的 3 个，无需手动指定
 4. **Google Trends 峰值可能比亚马逊早 1-2 个月**：分析结论中需要标注偏差

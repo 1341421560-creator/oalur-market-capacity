@@ -506,7 +506,7 @@ function runExcelFallback() {
     return;
   }
 
-  const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
+  const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null, protocolTimeout: 600000 });
   console.log(`Direct XHR concurrency: ${ASIN_TREND_CONCURRENCY} tabs`);
   let results = await runPool(asins, ASIN_TREND_CONCURRENCY, async (asin, i) => {
     await sleep((i % ASIN_TREND_CONCURRENCY) * 500);

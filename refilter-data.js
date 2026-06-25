@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { selectTargetCategories, listingMatchesKeywordIntent, titleMatchesKeywordIntent } = require('./category-selector');
+const { selectTargetCategories } = require('./category-selector');
 const {
   buildReferenceCategorySelectionSummary,
   normalizeReferenceCategories,
@@ -11,7 +11,21 @@ const {
   applyTargetCategoryMatch,
   listingMatchesTargetCategories
 } = require('./parent-listing-aggregate');
-const { buildRescuePriceGuard, rescuePriceMatches } = require('./rescue-price-guard');
+const { buildRescuePriceGuard } = require('./rescue-price-guard');
+const {
+  applyCodexSemanticReview,
+  applyCodexSemanticReviewExclusion,
+  buildCodexSemanticReviewCandidates,
+  loadCodexSemanticReview,
+  REVIEW_STANDARD
+} = require('./codex-semantic-review');
+const {
+  TARGET_CATEGORY_REVIEW_STANDARD,
+  applyTargetCategoryCodexReview,
+  buildTargetCategoryCodexReviewRequest,
+  loadTargetCategoryCodexReview,
+  writeTargetCategoryCodexReviewRequest
+} = require('./target-category-codex-review');
 
 const inputPath = process.argv[2];
 const outputPath = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : inputPath;
@@ -84,13 +98,30 @@ function reapplyFilter(marketData) {
   );
   const parents = allParentListings(marketData);
   const categorySelectionSource = categorySelectionRows(parents);
-  const categorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
+  const initialCategorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
+  const targetCategoryCodexReview = loadTargetCategoryCodexReview(inputPath, marketData);
+  const targetCategoryCodexApplication = applyTargetCategoryCodexReview(initialCategorySelectionResult, targetCategoryCodexReview.review);
+  const categorySelectionResult = targetCategoryCodexApplication.categorySelectionResult;
   const targetCategories = categorySelectionResult.targetCategories;
+  const targetCategoryCodexReviewRequest = buildTargetCategoryCodexReviewRequest({
+    keywords,
+    categorySelection: categorySelectionResult.categorySelection,
+    targetCategories,
+    referenceCategories,
+    items: categorySelectionSource
+  });
+  const targetCategoryCodexReviewWrite = writeTargetCategoryCodexReviewRequest(
+    outputPath,
+    targetCategoryCodexReviewRequest,
+    targetCategoryCodexReview.review,
+    targetCategoryCodexReview.reviewFile
+  );
   const referenceCategorySelection = buildReferenceCategorySelectionSummary(
     referenceCategories,
     categorySelectionResult.categorySelection
   );
   const targetCategorySet = new Set(targetCategories);
+  const codexSemanticReview = loadCodexSemanticReview(inputPath, marketData);
   const equivalentCategorySet = new Set(
     categorySelectionResult.categorySelection
       .filter(d => d.titleIntentRescueCandidate || d.functionalEquivalent)
@@ -105,6 +136,9 @@ function reapplyFilter(marketData) {
     delete item.keywordIntentRescuePriceCheck;
     delete item.keywordIntentRescueRejected;
     delete item.keywordIntentRescueRejectedReason;
+    delete item.codexSemanticReviewExcluded;
+    delete item.codexSemanticReviewRescued;
+    delete item.codexSemanticReviewDecision;
     delete item.targetCategoryTitleIntentRequired;
     delete item.targetCategoryTitleIntentRejected;
     return item;
@@ -115,30 +149,36 @@ function reapplyFilter(marketData) {
   );
 
   const listingMatchesFilter = (item) => {
+    const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
     if (listingMatchesTargetCategories(item, targetCategorySet)) {
       item.targetCategoryDirectMatched = true;
+      delete item.codexSemanticReviewExcluded;
+      delete item.codexSemanticReviewRescued;
+      delete item.codexSemanticReviewDecision;
+      delete item.targetCategoryTitleIntentRejected;
       return true;
     }
-
-    const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
-    const equivalentCategoryHit = categories.some(category => equivalentCategorySet.has(category));
-    if (!equivalentCategoryHit) return false;
-    const rescued = listingMatchesKeywordIntent(item, keywords);
-    if (rescued && !rescuePriceMatches(item, rescuePriceGuard)) return false;
-    if (rescued) {
-      const rescuedRows = (Array.isArray(item.variantRows) ? item.variantRows : [])
-        .filter(row => equivalentCategorySet.has(row.category) && keywords.some(keyword => titleMatchesKeywordIntent(row.title || item.title, keyword)));
-      item.targetMatchedCategories = [...new Set([...(item.targetMatchedCategories || []), ...rescuedRows.map(row => row.category).filter(Boolean)])];
-      item.targetMatchedChildAsins = [...new Set(rescuedRows.map(row => row.asin).filter(Boolean))];
-      item.keywordIntentRescued = true;
+    if (applyCodexSemanticReviewExclusion(item, codexSemanticReview.reviewIndex)) {
+      return false;
     }
-    return rescued;
+    if (applyCodexSemanticReview(item, codexSemanticReview.reviewIndex)) {
+      item.targetMatchedCategories = [...new Set([...(item.targetMatchedCategories || []), ...categories])];
+      return true;
+    }
+    return false;
   };
 
   const matched = prepared.filter(listingMatchesFilter);
   const data = matched;
   const matchedSet = new Set(matched);
   const excluded = prepared.filter(item => !matchedSet.has(item));
+  const codexSemanticReviewCandidates = buildCodexSemanticReviewCandidates({
+    keywords,
+    categorySelection: categorySelectionResult.categorySelection,
+    targetCategories,
+    items: prepared,
+    referenceCategories
+  });
   const categoryDistribution = Object.entries(categorySelectionSource.reduce((acc, row) => {
     const category = row.category || 'unknown';
     acc[category] = (acc[category] || 0) + 1;
@@ -152,6 +192,24 @@ function reapplyFilter(marketData) {
     equivalentCandidateCategories: [...equivalentCategorySet],
     referenceCategories,
     referenceCategorySelection,
+    targetCategoryCodexReviewFile: path.relative(path.dirname(path.resolve(outputPath)), targetCategoryCodexReview.reviewFile),
+    targetCategoryCodexReviewLoaded: targetCategoryCodexApplication.decisionCount > 0,
+    targetCategoryCodexReviewApplied: Boolean(targetCategoryCodexApplication.applied),
+    targetCategorySelectionMode: targetCategoryCodexApplication.mode,
+    targetCategoryCodexReviewDecisionCount: targetCategoryCodexApplication.decisionCount,
+    targetCategoryCodexReviewReviewedCategoryCount: targetCategoryCodexApplication.reviewedCategoryCount,
+    targetCategoryCodexReviewTotalCategoryCount: targetCategoryCodexApplication.totalCategoryCount,
+    targetCategoryCodexReviewComplete: Boolean(targetCategoryCodexApplication.complete),
+    targetCategoryCodexReviewIncludedCategories: targetCategoryCodexApplication.includedCategories,
+    targetCategoryCodexReviewExcludedCategories: targetCategoryCodexApplication.excludedCategories,
+    targetCategoryCodexReviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+    targetCategoryCodexReviewRequestFile: path.relative(path.dirname(path.resolve(outputPath)), targetCategoryCodexReviewWrite.reviewFile),
+    targetCategoryCodexReviewRequestWritten: Boolean(targetCategoryCodexReviewWrite.written),
+    targetCategoryCodexReviewRequest,
+    codexSemanticReviewFile: path.relative(path.dirname(path.resolve(outputPath)), codexSemanticReview.reviewFile),
+    codexSemanticReviewLoaded: Boolean(codexSemanticReview.review),
+    codexSemanticReviewStandard: REVIEW_STANDARD,
+    codexSemanticReviewCandidates,
     categorySelection: categorySelectionResult.categorySelection,
     rescuePriceGuard,
     categoryDistribution,
