@@ -477,23 +477,7 @@ function selectTargetCategories(products, keywords, options = {}) {
   ]);
   const highShareTitleRescueSet = new Set(highShareTitleRescueSelected.map(d => d.category));
 
-  const fallback = selected.length
-    ? selected
-    : (broadTitleIntentSelected.filter(isTargetCategoryCandidate).length
-      ? broadTitleIntentSelected.filter(isTargetCategoryCandidate).slice(0, 5)
-      : details.filter(isTargetCategoryCandidate).slice(0, 1));
-  const expandedFallback = selected.length ? fallback : (() => {
-    const validDetails = details.filter(isTargetCategoryCandidate);
-    const top = validDetails[0];
-    if (!top) return fallback;
-    const closeMatches = validDetails.filter(d => (
-      d.score >= Math.max(70, top.score - 8) &&
-      d.count >= 3 &&
-      d.titleAllRate >= 0.35
-    )).slice(0, 5);
-    return closeMatches.length ? closeMatches : fallback;
-  })();
-  const selectedCategories = expandedFallback
+  const selectedCategories = selected
     .filter(d => !d.functionalEquivalent || isReferenceConfirmedTarget(d))
     .map(d => d.category);
   const selectedSet = new Set(selectedCategories);

@@ -11,6 +11,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { localKeywordIntentAnalysis } = require('./keyword-intent-ai');
 const { createRunLogger } = require('./run-log');
+const { refreshParentAggregatedMetrics } = require('./parent-listing-aggregate');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -140,6 +141,15 @@ function readJsonIfExists(filePath) {
     console.warn(`JSON read skipped: ${error.message}`);
     return null;
   }
+}
+
+function hasUsableOalurMonthlyTrend(data) {
+  return Boolean(
+    data &&
+    data.scoringEligible !== false &&
+    data.searchesTrend &&
+    Object.keys(data.searchesTrend).length > 0
+  );
 }
 
 function normalizeReviewDecision(value) {
@@ -878,20 +888,27 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
     }
   }
 
-  let oalurVolData = null;
-  if (fs.existsSync(oalurVolFile)) {
+  let oalurVolData = readJsonIfExists(oalurVolFile);
+  if (hasUsableOalurMonthlyTrend(oalurVolData)) {
     console.log(`\n📁 Step 2/3: 读取已有 Oalur 搜索量缓存`);
-    oalurVolData = JSON.parse(fs.readFileSync(oalurVolFile, 'utf-8'));
   } else {
-    console.log(`\n📊 Step 2/3: 提取 Oalur 搜索量数据...`);
+    if (oalurVolData) {
+      console.log(`\n⚠️ Step 2/3: Oalur 缓存没有有效月度趋势，忽略并重新抓取`);
+    } else {
+      console.log(`\n📊 Step 2/3: 提取 Oalur 搜索量数据...`);
+    }
+    oalurVolData = null;
     try {
       execFileSync(
         nodeBin,
         [path.join(SKILL_DIR, 'extract-oalur-search-volume.js'), keyword, oalurVolFile],
-        { stdio: 'inherit', timeout: 120000 }
+        { stdio: 'inherit', timeout: 240000 }
       );
-      if (fs.existsSync(oalurVolFile)) {
-        oalurVolData = JSON.parse(fs.readFileSync(oalurVolFile, 'utf-8'));
+      const refreshed = readJsonIfExists(oalurVolFile);
+      if (hasUsableOalurMonthlyTrend(refreshed)) {
+        oalurVolData = refreshed;
+      } else {
+        console.log('⚠️ Oalur 抓取未返回有效月度趋势，本次不使用空缓存评分。');
       }
     } catch (e) {
       console.log(`⚠️ Oalur 搜索量提取失败: ${e.message}`);
@@ -904,6 +921,7 @@ function analyzeSeasonality(gtData, oalurVolData, asinTrends) {
 
   if (bsrDataFile && fs.existsSync(bsrDataFile)) {
     const bsrData = JSON.parse(fs.readFileSync(bsrDataFile, 'utf-8'));
+    bsrData.data = refreshParentAggregatedMetrics(bsrData.data || []);
     const oldAsins = pickOldAsins(bsrData);
 
     if (oldAsins.length > 0) {

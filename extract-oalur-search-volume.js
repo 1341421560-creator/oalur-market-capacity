@@ -57,25 +57,30 @@ function buildKeywordRecommendation(queryKeyword, rows) {
     .filter(row => normalizeKeyword(row.keyword) === normalizedQuery)
     .map(row => ({ ...row, weeklySearchVolume: parseNumber(row.searchVolume) }))
     .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume);
-  const candidates = similarRows.length ? similarRows : rows
+  const recommendationCandidates = similarRows.length ? similarRows : rows
     .map(row => ({ ...row, weeklySearchVolume: parseNumber(row.searchVolume) }))
     .sort((a, b) => b.weeklySearchVolume - a.weeklySearchVolume)
     .slice(0, 1);
   const queriedRow = rows.find(row => row.keyword.toLowerCase() === String(queryKeyword).toLowerCase());
   const queriedVolume = queriedRow ? parseNumber(queriedRow.searchVolume) : null;
-  const best = candidates[0] || null;
+  const best = recommendationCandidates[0] || null;
+  const scoringRow = similarRows[0] || null;
   const recommendedKeyword = best?.keyword || queryKeyword;
   const isQueryBest = normalizeKeyword(recommendedKeyword) === normalizedQuery &&
     String(recommendedKeyword).toLowerCase() === String(queryKeyword).toLowerCase();
   return {
     queriedKeyword: queryKeyword,
     recommendedKeyword,
+    scoringKeyword: scoringRow?.keyword || '',
+    scoringMatchType: scoringRow
+      ? (String(scoringRow.keyword).toLowerCase() === String(queryKeyword).toLowerCase() ? 'exact' : 'normalized-equivalent')
+      : 'missing',
     matchedKeyword: queriedRow?.keyword || '',
     isQueryBest,
     queriedWeeklySearchVolume: queriedVolume,
     recommendedWeeklySearchVolume: best ? best.weeklySearchVolume : null,
-    candidateCount: candidates.length,
-    candidates: candidates.slice(0, 5).map(row => ({
+    candidateCount: recommendationCandidates.length,
+    candidates: recommendationCandidates.slice(0, 5).map(row => ({
       keyword: row.keyword,
       searchVolume: row.searchVolume,
       weeklySearchVolume: row.weeklySearchVolume,
@@ -100,39 +105,14 @@ if (!keyword) {
 
 async function extractVolume(page, kw) {
   const url = 'https://vip.oalur.com/keyword/selection?site=US';
+  const maxSearchAttempts = 3;
+  const tableLoadTimeoutMs = 45000;
 
-  // ===== Step 1: 导航 =====
-  console.log('🌐 导航至 Oalur 关键词研究页面...');
-  await activatePage(page);
-  await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-  await new Promise(r => setTimeout(r, 3000));
-
-  // ===== Step 2: 输入关键词并搜索 =====
-  console.log(`🔍 输入关键词: "${kw}"`);
-  await page.evaluate((kw) => {
-    const input = document.querySelector('input[placeholder*="请输入关键词"]');
-    if (input) {
-      const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      s.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true }));
-      s.call(input, kw); input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-  }, kw);
-  await new Promise(r => setTimeout(r, 1000));
-
-  await page.evaluate(() => {
-    for (const btn of document.querySelectorAll('button'))
-      if (btn.innerText.trim() === '立即查询') { btn.click(); return; }
-  });
-  await new Promise(r => setTimeout(r, 6000));
-
-  // ===== Step 3: 从表格提取当前关键词信息 =====
-  console.log('📋 提取关键词表格数据...');
-  const tableData = await page.evaluate(() => {
-    const rows = document.querySelectorAll('tr.el-table__row');
+  const readKeywordTable = async () => page.evaluate(() => {
+    const rows = document.querySelectorAll('tr.el-table__row, .el-table__body-wrapper tbody tr');
     return Array.from(rows).map(row => {
       const tds = row.querySelectorAll('td');
-      if (tds.length < 13) return null;
+      if (tds.length < 8) return null;
       return {
         keyword: tds[1]?.innerText?.trim() || '',
         category: (tds[2]?.innerText || '').replace(/\n/g, ' | ').trim(),
@@ -145,17 +125,94 @@ async function extractVolume(page, kw) {
         suggestedCPC: (tds[11]?.innerText || '').replace(/\n/g, ' | ').trim(),
         top3Brands: (tds[12]?.innerText || '').replace(/\n/g, ' | ').trim()
       };
-    }).filter(Boolean);
+    }).filter(row => row && row.keyword);
   });
 
+  const submitSearch = async () => {
+    const inputFound = await page.evaluate((query) => {
+      const input = document.querySelector('input[placeholder*="请输入关键词"]') ||
+        document.querySelector('input[placeholder*="关键字"]') ||
+        document.querySelector('input[type="text"]');
+      if (!input) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      setter.call(input, query);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, kw);
+    if (!inputFound) throw new Error('Oalur keyword input was not found');
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const submitted = await page.evaluate(() => {
+      for (const button of document.querySelectorAll('button')) {
+        if (button.innerText.trim() === '立即查询') {
+          button.click();
+          return true;
+        }
+      }
+      return false;
+    });
+    if (!submitted) throw new Error('Oalur search button was not found');
+  };
+
+  // ===== Step 1: 导航 =====
+  console.log('🌐 导航至 Oalur 关键词研究页面...');
+  await activatePage(page);
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+  let tableData = [];
+  for (let attempt = 1; attempt <= maxSearchAttempts; attempt++) {
+    if (attempt > 1) {
+      console.log(`Keyword table did not load; refreshing before retry ${attempt}/${maxSearchAttempts}...`);
+      await page.reload({ waitUntil: 'networkidle2', timeout: 30000 });
+    }
+    console.log(`Searching Oalur keyword "${kw}" (attempt ${attempt}/${maxSearchAttempts})...`);
+    await submitSearch();
+    const tableLoaded = await page.waitForFunction(
+      () => Array.from(document.querySelectorAll('tr.el-table__row, .el-table__body-wrapper tbody tr'))
+        .some(row => row.querySelectorAll('td').length >= 8),
+      { timeout: tableLoadTimeoutMs }
+    ).then(() => true).catch(() => false);
+    tableData = await readKeywordTable();
+    if (tableLoaded && tableData.length > 0) break;
+  }
+
+  if (tableData.length === 0) {
+    throw new Error(`Oalur keyword table did not load after ${maxSearchAttempts} attempts; no empty cache was written`);
+  }
+
+  console.log(`Keyword table loaded: ${tableData.length} row(s)`);
+
   const keywordRecommendation = buildKeywordRecommendation(kw, tableData);
-  const trendKeyword = keywordRecommendation.recommendedKeyword || kw;
-  const exactMatch = tableData.find(r => r.keyword.toLowerCase() === trendKeyword.toLowerCase());
-  const basicData = exactMatch || tableData[0];
+  // Scoring may only use an exact or normalized-equivalent query. A broader or branded recommendation remains display-only.
+  const trendKeyword = keywordRecommendation.scoringKeyword || '';
+  const exactMatch = trendKeyword ? tableData.find(r => r.keyword.toLowerCase() === trendKeyword.toLowerCase()) : null;
+  const basicData = exactMatch || null;
 
   if (!basicData) {
-    console.log(`⚠️ 未找到关键词 "${kw}" 的搜索结果`);
-    return { keyword: kw, tableData, searchesTrend: null, searchesRankTrend: null };
+    console.log(`⚠️ 未找到关键词 "${kw}" 的精确或规范化等价结果，趋势评分留空；品牌词或宽泛词仅保留为展示建议。`);
+    const emptyResult = {
+      keyword: kw,
+      trendKeyword: '',
+      trendKeywordStatus: 'missing-exact-match',
+      scoringEligible: false,
+      extractedAt: new Date().toISOString(),
+      basicData: null,
+      allKeywords: tableData,
+      keywordRecommendation,
+      searchesTrend: {},
+      searchesRankTrend: {},
+      oppIndexTrend: {},
+      productTotalNumTrend: {},
+      topClickRatioTrend: {},
+      topConvertRatioTrend: {},
+      dataCycle: '按月',
+      monthlyCount: 0,
+      dateRange: null
+    };
+    fs.writeFileSync(outFile, JSON.stringify(emptyResult, null, 2));
+    console.log(`✅ 空趋势结果已保存: ${outFile}`);
+    return emptyResult;
   }
 
   console.log(`✅ 匹配行: "${basicData.keyword}"`);
@@ -260,11 +317,17 @@ async function extractVolume(page, kw) {
   const topClickRatioTrend = sliceRecent(trendData?.topClickRatioTrend);
   const topConvertRatioTrend = sliceRecent(trendData?.topConvertRatioTrend);
 
+  if (Object.keys(searchesTrend).length === 0) {
+    throw new Error('Oalur trend dialog did not load monthly search data; no incomplete cache was written');
+  }
+
   // ===== Step 8: 保存结果 =====
   const sortedMonths = Object.keys(searchesTrend).sort();
   const result = {
     keyword: kw,
     trendKeyword,
+    trendKeywordStatus: keywordRecommendation.scoringMatchType,
+    scoringEligible: true,
     extractedAt: new Date().toISOString(),
     basicData,
     allKeywords: tableData,

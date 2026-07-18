@@ -11,21 +11,31 @@ const {
   applyTargetCategoryMatch,
   listingMatchesTargetCategories
 } = require('./parent-listing-aggregate');
+const { canonicalVariantRowsFromMarketData } = require('./canonical-variant-rows');
 const { buildRescuePriceGuard } = require('./rescue-price-guard');
 const {
   applyCodexSemanticReview,
   applyCodexSemanticReviewExclusion,
   buildCodexSemanticReviewCandidates,
   loadCodexSemanticReview,
-  REVIEW_STANDARD
+  REVIEW_STANDARD,
+  writeCodexSemanticReviewRequest
 } = require('./codex-semantic-review');
 const {
   TARGET_CATEGORY_REVIEW_STANDARD,
   applyTargetCategoryCodexReview,
   buildTargetCategoryCodexReviewRequest,
   loadTargetCategoryCodexReview,
+  requestFromExistingTargetCategoryReview,
   writeTargetCategoryCodexReviewRequest
 } = require('./target-category-codex-review');
+const {
+  applySalesFloorFilter,
+  salesFloorMinFromEnv
+} = require('./sales-floor-filter');
+const {
+  buildInputProductContext
+} = require('./input-product-context');
 
 const inputPath = process.argv[2];
 const outputPath = process.argv[3] && !process.argv[3].startsWith('--') ? process.argv[3] : inputPath;
@@ -34,46 +44,6 @@ const referenceCategoriesFromArgs = parseReferenceCategoryArgs(process.argv.slic
 if (!inputPath) {
   console.error('Usage: node refilter-data.js <market-data.json> [output.json]');
   process.exit(1);
-}
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function listingKey(item) {
-  return item.parentAsin || item.pasin || item.asin;
-}
-
-function sourceRowsFromListing(item) {
-  const parentKey = listingKey(item);
-  if (Array.isArray(item.variantRows) && item.variantRows.length) {
-    return item.variantRows.map(row => ({
-      ...row,
-      sourceKeyword: row.sourceKeyword || item.sourceKeyword,
-      parentAsin: row.parentAsin || parentKey,
-      pasin: row.pasin || (row.asin && row.asin !== parentKey ? parentKey : row.pasin),
-      brand: row.brand || item.brand,
-      sellerType: row.sellerType || item.sellerType,
-      variants: row.variants || item.variants,
-      sellerCount: row.sellerCount || item.sellerCount
-    }));
-  }
-  return [clone(item)];
-}
-
-function allSourceRows(marketData) {
-  const byAsin = new Map();
-  for (const item of [...(marketData.data || []), ...(marketData.excluded || [])]) {
-    for (const row of sourceRowsFromListing(item)) {
-      if (!row.asin) continue;
-      if (!byAsin.has(row.asin)) byAsin.set(row.asin, row);
-    }
-  }
-  return [...byAsin.values()];
-}
-
-function allParentListings(marketData) {
-  return aggregateParentListings(allSourceRows(marketData));
 }
 
 function categorySelectionRows(parents) {
@@ -96,26 +66,51 @@ function reapplyFilter(marketData) {
   const referenceCategories = normalizeReferenceCategories(
     referenceCategoriesFromArgs.length ? referenceCategoriesFromArgs : (marketData.referenceCategories || [])
   );
-  const parents = allParentListings(marketData);
+  const inputProductContext = buildInputProductContext(marketData.inputProductContext || {}, {
+    keyword: keywords[0] || keywords.join(' + '),
+    category: referenceCategories[0] || '',
+    categories: referenceCategories
+  });
+  const inputProductContexts = Array.isArray(marketData.inputProductContexts) && marketData.inputProductContexts.length > 1
+    ? marketData.inputProductContexts
+    : [];
+  const salesFloorMin = Number(marketData.analysisSalesFloor || salesFloorMinFromEnv());
+  const canonicalRawVariantRows = canonicalVariantRowsFromMarketData(marketData);
+  const parents = aggregateParentListings(canonicalRawVariantRows);
   const categorySelectionSource = categorySelectionRows(parents);
   const initialCategorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
   const targetCategoryCodexReview = loadTargetCategoryCodexReview(inputPath, marketData);
   const targetCategoryCodexApplication = applyTargetCategoryCodexReview(initialCategorySelectionResult, targetCategoryCodexReview.review);
   const categorySelectionResult = targetCategoryCodexApplication.categorySelectionResult;
   const targetCategories = categorySelectionResult.targetCategories;
-  const targetCategoryCodexReviewRequest = buildTargetCategoryCodexReviewRequest({
+  const generatedTargetCategoryCodexReviewRequest = buildTargetCategoryCodexReviewRequest({
     keywords,
+    inputProductContext,
+    inputProductContexts,
     categorySelection: categorySelectionResult.categorySelection,
     targetCategories,
     referenceCategories,
     items: categorySelectionSource
   });
-  const targetCategoryCodexReviewWrite = writeTargetCategoryCodexReviewRequest(
-    outputPath,
-    targetCategoryCodexReviewRequest,
-    targetCategoryCodexReview.review,
-    targetCategoryCodexReview.reviewFile
-  );
+  const usesSharedCurrentMarketCategoryReview = Boolean(marketData.historicalNewOnly);
+  const targetCategoryCodexReviewRequest = usesSharedCurrentMarketCategoryReview
+    ? requestFromExistingTargetCategoryReview(
+      targetCategoryCodexReview.review,
+      generatedTargetCategoryCodexReviewRequest
+    )
+    : generatedTargetCategoryCodexReviewRequest;
+  const targetCategoryCodexReviewWrite = usesSharedCurrentMarketCategoryReview
+    ? {
+      reviewFile: targetCategoryCodexReview.reviewFile,
+      written: false,
+      reason: 'historical data reuses the current-market category review request'
+    }
+    : writeTargetCategoryCodexReviewRequest(
+      outputPath,
+      targetCategoryCodexReviewRequest,
+      targetCategoryCodexReview.review,
+      targetCategoryCodexReview.reviewFile
+    );
   const referenceCategorySelection = buildReferenceCategorySelectionSummary(
     referenceCategories,
     categorySelectionResult.categorySelection
@@ -169,16 +164,28 @@ function reapplyFilter(marketData) {
   };
 
   const matched = prepared.filter(listingMatchesFilter);
-  const data = matched;
   const matchedSet = new Set(matched);
-  const excluded = prepared.filter(item => !matchedSet.has(item));
+  const salesFloorFilter = applySalesFloorFilter(matched, { salesFloorMin });
+  const data = salesFloorFilter.included;
+  const excluded = [
+    ...prepared.filter(item => !matchedSet.has(item)),
+    ...salesFloorFilter.excluded
+  ];
   const codexSemanticReviewCandidates = buildCodexSemanticReviewCandidates({
     keywords,
+    inputProductContext,
+    inputProductContexts,
     categorySelection: categorySelectionResult.categorySelection,
     targetCategories,
     items: prepared,
     referenceCategories
   });
+  const codexSemanticReviewWrite = writeCodexSemanticReviewRequest(
+    outputPath,
+    codexSemanticReviewCandidates,
+    codexSemanticReview.review,
+    codexSemanticReview.reviewFile
+  );
   const categoryDistribution = Object.entries(categorySelectionSource.reduce((acc, row) => {
     const category = row.category || 'unknown';
     acc[category] = (acc[category] || 0) + 1;
@@ -190,6 +197,8 @@ function reapplyFilter(marketData) {
     targetCategory: targetCategories[0] || '',
     targetCategories,
     equivalentCandidateCategories: [...equivalentCategorySet],
+    inputProductContext,
+    ...(inputProductContexts.length > 1 ? { inputProductContexts } : {}),
     referenceCategories,
     referenceCategorySelection,
     targetCategoryCodexReviewFile: path.relative(path.dirname(path.resolve(outputPath)), targetCategoryCodexReview.reviewFile),
@@ -207,7 +216,8 @@ function reapplyFilter(marketData) {
     targetCategoryCodexReviewRequestWritten: Boolean(targetCategoryCodexReviewWrite.written),
     targetCategoryCodexReviewRequest,
     codexSemanticReviewFile: path.relative(path.dirname(path.resolve(outputPath)), codexSemanticReview.reviewFile),
-    codexSemanticReviewLoaded: Boolean(codexSemanticReview.review),
+    codexSemanticReviewLoaded: Boolean(codexSemanticReview.reviewLoaded),
+    codexSemanticReviewRequestWritten: Boolean(codexSemanticReviewWrite.written),
     codexSemanticReviewStandard: REVIEW_STANDARD,
     codexSemanticReviewCandidates,
     categorySelection: categorySelectionResult.categorySelection,
@@ -216,10 +226,15 @@ function reapplyFilter(marketData) {
     filteredCount: data.length,
     excludedCount: excluded.length,
     targetMatchedCount: matched.length,
-    salesFloorExcludedCount: 0,
+    analysisSalesFloor: salesFloorMin,
+    salesFloorExcludedCount: salesFloorFilter.summary.count,
+    salesFloorExcludedSummary: salesFloorFilter.summary,
     rawTotal: parents.length,
     total: parents.length,
     allCount: parents.length,
+    canonicalRawVariantRowsVersion: 1,
+    canonicalRawVariantRowCount: canonicalRawVariantRows.length,
+    canonicalRawVariantRows,
     refilteredAt: new Date().toISOString(),
     data,
     excluded
@@ -233,4 +248,7 @@ fs.writeFileSync(outputPath, JSON.stringify(result, null, 2), 'utf8');
 
 console.log(`Refiltered: ${inputPath} -> ${outputPath}`);
 console.log(`Parents: ${result.total}, filtered: ${result.filteredCount}, excluded: ${result.excludedCount}`);
+if (result.salesFloorExcludedCount > 0) {
+  console.log(`Sales floor: excluded ${result.salesFloorExcludedCount} target-matched listings below ${result.analysisSalesFloor} monthly sales`);
+}
 console.log(`Target categories: ${result.targetCategories.join(' | ')}`);

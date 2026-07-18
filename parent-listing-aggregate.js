@@ -226,6 +226,32 @@ function aggregateParentListings(items) {
   });
 }
 
+function refreshParentAggregatedMetrics(items) {
+  return (Array.isArray(items) ? items : []).map(item => {
+    const metricRows = Array.isArray(item?.variantRows) && item.variantRows.length
+      ? item.variantRows
+      : [];
+    if (!metricRows.length) return item;
+
+    const aggregated = aggregateVariantMetrics({ ...item }, metricRows);
+    const ratingsAggregation = aggregateRatingsForParent(metricRows);
+    const supplementedRatings = parseNumber(item.ratingsNumAggregated || item.ratings);
+    const useSupplementedRatings = ratingsAggregation.value <= 0
+      && supplementedRatings > 0
+      && String(item.ratingsSupplementedFrom || '').includes('products/information');
+    const ratingsValue = useSupplementedRatings ? supplementedRatings : ratingsAggregation.value;
+
+    return {
+      ...aggregated,
+      ratings: formatInteger(ratingsValue),
+      ratingsNumAggregated: Math.round(ratingsValue),
+      ratingsMetricSource: useSupplementedRatings ? item.ratingsMetricSource : ratingsAggregation.mode,
+      ratingsMetricReason: useSupplementedRatings ? item.ratingsMetricReason : ratingsAggregation.reason,
+      ratingsMetricValues: useSupplementedRatings ? item.ratingsMetricValues : ratingsAggregation.values
+    };
+  });
+}
+
 function listingMatchesTargetCategories(item, targetCategorySet) {
   return itemCategories(item).some(category => targetCategorySet.has(category));
 }
@@ -247,6 +273,7 @@ function applyTargetCategoryMatch(item, targetCategorySet) {
 
 module.exports = {
   aggregateParentListings,
+  refreshParentAggregatedMetrics,
   aggregateVariantMetrics,
   applyTargetCategoryMatch,
   listingMatchesTargetCategories,

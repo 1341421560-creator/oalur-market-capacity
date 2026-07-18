@@ -19,6 +19,7 @@ const { activatePage } = require('./browser-page-utils');
 
 const OALUR_ASIN_SEARCH_URL = 'https://vip.oalur.com/insight/product/search?site=US';
 const OALUR_NAV_TIMEOUT_MS = 30000;
+const ASIN_DIRECT_TIMEOUT_MS = Math.max(30000, Number(process.env.OALUR_ASIN_DIRECT_TIMEOUT_MS || 60000));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function todayString() {
@@ -271,8 +272,13 @@ async function navigateAndOpenTrends(page, asin) {
 
 async function extractDirect(browser, asin, index, total) {
   const page = await browser.newPage();
+  page.setDefaultTimeout(ASIN_DIRECT_TIMEOUT_MS);
+  page.setDefaultNavigationTimeout(OALUR_NAV_TIMEOUT_MS);
   await activatePage(page);
   const state = { basicInfo: null, salesTrend: null, keepaTrend: null, bsrTrend: null };
+  const directTimeout = setTimeout(() => {
+    page.close().catch(() => {});
+  }, ASIN_DIRECT_TIMEOUT_MS);
 
   page.on('response', async response => {
     const url = response.url();
@@ -315,7 +321,33 @@ async function extractDirect(browser, asin, index, total) {
     console.log(`  price=${directTrendData.priceData.length}, ratings=${directTrendData.ratingsData.length}, bsr=${directTrendData.bsrData.length}, salesMonths=${product.totalMonths}`);
     return product;
   } finally {
+    clearTimeout(directTimeout);
     await page.close().catch(() => {});
+  }
+}
+
+async function extractDirectWithTimeout(browser, asin, index, total) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`ASIN ${asin} direct XHR timed out after ${ASIN_DIRECT_TIMEOUT_MS}ms`));
+    }, ASIN_DIRECT_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([extractDirect(browser, asin, index, total), timeout]);
+  } catch (error) {
+    console.error(`ERROR: ${error.message}`);
+    return {
+      asin,
+      title: '',
+      brand: '',
+      trendData: null,
+      directTrendData: { priceData: [], ratingsData: [], bsrData: [] },
+      totalMonths: 0,
+      extractionMode: 'xhr-timeout'
+    };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -510,7 +542,7 @@ function runExcelFallback() {
   console.log(`Direct XHR concurrency: ${ASIN_TREND_CONCURRENCY} tabs`);
   let results = await runPool(asins, ASIN_TREND_CONCURRENCY, async (asin, i) => {
     await sleep((i % ASIN_TREND_CONCURRENCY) * 500);
-    return extractDirect(browser, asin, i, asins.length);
+    return extractDirectWithTimeout(browser, asin, i, asins.length);
   });
 
   const failed = results.filter(product =>
@@ -525,7 +557,7 @@ function runExcelFallback() {
     for (const product of failed) {
       const idx = asins.indexOf(product.asin);
       if (idx < 0) continue;
-      results[idx] = await extractDirect(browser, product.asin, idx + 0.5, asins.length);
+      results[idx] = await extractDirectWithTimeout(browser, product.asin, idx + 0.5, asins.length);
     }
   }
 

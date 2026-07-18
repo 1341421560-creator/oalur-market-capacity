@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-20T08:06:29.019Z",
+  "generatedAt": "2026-07-10T04:17:42.248Z",
   "model": null,
   "usedOpenAI": false,
   "filteringImpact": "none",
@@ -8,6 +8,11 @@
     {
       "keyword": "fruit",
       "normalizedKeyword": "fruit",
+      "coreKeyword": "fruit",
+      "googleTrendsKeywords": [
+        "fruit"
+      ],
+      "googleTrendsStrategy": "local-agent-keyword-is-core",
       "source": "local-fallback",
       "confidence": "low",
       "shape": [

@@ -6,6 +6,19 @@ const {
   normalizeReferenceCategories
 } = require('./reference-categories');
 const { createRunLogger } = require('./run-log');
+const {
+  codexReviewStatus
+} = require('./codex-review-workflow');
+const {
+  buildInputProductContext
+} = require('./input-product-context');
+const {
+  evaluateBatchTurnCompletion,
+  REQUIRED_COMPLETED_STEPS,
+  REQUIRED_TERMINAL_STEPS,
+  TERMINAL_ITEM_STATUSES
+} = require('./verify-batch-turn-completion');
+const { isConfirmedHardSkip } = require('./oalur-query-guard');
 
 function localDateString(date = new Date()) {
   const year = date.getFullYear();
@@ -35,8 +48,9 @@ function parseArgs(argv) {
   const positional = argv.filter(arg => !arg.startsWith('--'));
   const opts = {
     jsonFile: positional[0],
-    bsr: '20000',
+    bsr: '25000',
     start: 1,
+    outputStart: null,
     limit: null,
     resume: true,
     batchRoot: null
@@ -46,6 +60,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === '--bsr') opts.bsr = String(argv[++i] || opts.bsr);
     else if (arg === '--start') opts.start = Math.max(1, Number(argv[++i] || 1));
+    else if (arg === '--output-start') opts.outputStart = Math.max(1, Number(argv[++i] || 1));
     else if (arg === '--limit') {
       const raw = Number(argv[++i]);
       opts.limit = Number.isFinite(raw) && raw > 0 ? raw : null;
@@ -60,7 +75,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  console.error('Usage: node run-keyword-json-batch.js <keywords-agent-same.json> [--bsr 20000] [--start 1] [--limit N] [--batch-root output/YYYY-MM-DD-automated-market] [--no-resume]');
+  console.error('Usage: node run-keyword-json-batch.js <keywords-agent-same.json> [--bsr 25000] [--start 1] [--output-start N] [--limit N] [--batch-root output/YYYY-MM-DD-automated-market] [--no-resume]');
 }
 
 function readBatchProducts(jsonFile) {
@@ -69,15 +84,20 @@ function readBatchProducts(jsonFile) {
   if (!Array.isArray(payload.products)) {
     throw new Error(`JSON does not contain products[]: ${jsonFile}`);
   }
-  return payload.products.map((item, index) => ({
-    index: index + 1,
-    asin: item.asin || '',
-    keyword: String(item.keyword || '').trim(),
-    referenceCategories: normalizeReferenceCategories([
-      item.category,
-      ...(Array.isArray(item.categories) ? item.categories : [])
-    ])
-  }));
+  return payload.products.map((item, index) => {
+    const keyword = String(item.keyword || '').trim();
+    const inputProductContext = buildInputProductContext(item, { keyword });
+    return {
+      index: index + 1,
+      asin: item.asin || '',
+      keyword,
+      inputProductContext,
+      referenceCategories: normalizeReferenceCategories([
+        inputProductContext.category,
+        ...(Array.isArray(inputProductContext.categories) ? inputProductContext.categories : [])
+      ])
+    };
+  });
 }
 
 function runNode(scriptName, args, label, envExtra = {}) {
@@ -105,9 +125,48 @@ function readJsonIfExists(filePath, fallback) {
   }
 }
 
+function sameJsonValue(a, b) {
+  return JSON.stringify(a || null) === JSON.stringify(b || null);
+}
+
+function upsertInputProductContext(dataFile, context, referenceCategories = [], logger) {
+  if (!context || !fs.existsSync(dataFile)) return false;
+  const payload = readJsonIfExists(dataFile, null);
+  if (!payload || typeof payload !== 'object') return false;
+  const contexts = Array.isArray(payload.inputProductContexts) ? payload.inputProductContexts : [];
+  const nextContexts = contexts.length ? contexts : [context];
+  const nextReferenceCategories = Array.isArray(referenceCategories) ? referenceCategories : [];
+  const changed = !sameJsonValue(payload.inputProductContext, context) ||
+    !sameJsonValue(nextContexts[0], context) ||
+    !sameJsonValue(payload.referenceCategories, nextReferenceCategories) ||
+    Array.isArray(payload.inputProductContexts);
+  if (!changed) return false;
+  payload.inputProductContext = context;
+  delete payload.inputProductContexts;
+  payload.referenceCategories = nextReferenceCategories;
+  if (payload.marketRunSummary && typeof payload.marketRunSummary === 'object') {
+    payload.marketRunSummary.inputProductContext = {
+      asin: context.asin || '',
+      hasTitle: Boolean(context.title),
+      categoryCount: Array.isArray(context.categories) ? context.categories.length : 0,
+      bulletPointCount: Array.isArray(context.bulletPoints) ? context.bulletPoints.length : 0,
+      hasDescription: Boolean(context.description)
+    };
+  }
+  fs.writeFileSync(dataFile, JSON.stringify(payload, null, 2), 'utf8');
+  logger?.info('batch.input_product_context_upserted', {
+    dataFile: path.relative(process.cwd(), dataFile),
+    asin: context.asin || '',
+    referenceCategoryCount: nextReferenceCategories.length,
+    bulletPointCount: Array.isArray(context.bulletPoints) ? context.bulletPoints.length : 0
+  });
+  return true;
+}
+
 function createProgress(batchRoot, opts, products) {
   return {
     version: 1,
+    batchRoot: path.relative(process.cwd(), batchRoot),
     jsonFile: path.resolve(opts.jsonFile),
     bsr: String(opts.bsr),
     totalProducts: products.length,
@@ -122,6 +181,7 @@ function loadProgress(progressFile, batchRoot, opts, products) {
   const fallback = createProgress(batchRoot, opts, products);
   const progress = readJsonIfExists(progressFile, fallback);
   progress.version = progress.version || 1;
+  progress.batchRoot = progress.batchRoot || path.relative(process.cwd(), batchRoot);
   progress.jsonFile = progress.jsonFile || path.resolve(opts.jsonFile);
   progress.bsr = String(progress.bsr || opts.bsr);
   progress.totalProducts = products.length;
@@ -135,15 +195,36 @@ function saveProgress(progressFile, progress) {
   fs.writeFileSync(progressFile, JSON.stringify(progress, null, 2), 'utf8');
 }
 
+function itemNumber(item) {
+  return Number.isFinite(Number(item?.outputIndex)) ? Number(item.outputIndex) : Number(item?.index);
+}
+
 function itemKey(item) {
-  return String(item.index).padStart(3, '0');
+  return String(itemNumber(item)).padStart(3, '0');
 }
 
 function getItemProgress(progress, item) {
   const key = itemKey(item);
+  const existing = progress.items[key];
+  if (existing) {
+    const expectedSourceIndex = Number(item.index);
+    const existingSourceIndex = Number(existing.sourceIndex);
+    const sameSource = existingSourceIndex === expectedSourceIndex;
+    const sameKeyword = String(existing.keyword || '').trim() === String(item.keyword || '').trim();
+    const sameAsin = !existing.asin || !item.asin || String(existing.asin).trim() === String(item.asin).trim();
+    if (!sameSource || !sameKeyword || !sameAsin) {
+      throw new Error(
+        `Output item ${key} belongs to a different input product. ` +
+        `Existing source=${existing.sourceIndex}, keyword=${existing.keyword}, asin=${existing.asin || ''}; ` +
+        `requested source=${item.index}, keyword=${item.keyword}, asin=${item.asin || ''}. ` +
+        'Use a new output index or rerun the selected range with --no-resume.'
+      );
+    }
+  }
   if (!progress.items[key]) {
     progress.items[key] = {
-      index: item.index,
+      index: itemNumber(item),
+      sourceIndex: item.index,
       keyword: item.keyword,
       asin: item.asin || '',
       status: 'pending',
@@ -162,12 +243,22 @@ function markItemStatus(progressFile, progress, item, patch) {
 function markStep(progressFile, progress, item, step, status, extra = {}) {
   const entry = getItemProgress(progress, item);
   entry.currentStep = status === 'running' ? step : entry.currentStep;
-  entry.steps[step] = {
+  const nextStep = {
     ...(entry.steps[step] || {}),
     ...extra,
     status,
     updatedAt: new Date().toISOString()
   };
+  if ((status === 'running' || status === 'completed') && !Object.hasOwn(extra, 'reason')) {
+    delete nextStep.reason;
+  }
+  if ((status === 'running' || status === 'completed') && !Object.hasOwn(extra, 'error')) {
+    delete nextStep.error;
+  }
+  if (status === 'completed' && !Object.hasOwn(extra, 'pausedAt')) {
+    delete nextStep.pausedAt;
+  }
+  entry.steps[step] = nextStep;
   saveProgress(progressFile, progress);
 }
 
@@ -272,7 +363,7 @@ function buildPaths(batchRoot, item, bsr) {
   const date = batchDateFromRoot(batchRoot);
   const keywordTitle = titleSegment(item.keyword);
   const keywordFile = safeSegment(item.keyword).toLowerCase();
-  const itemRoot = path.join(batchRoot, `${date}-${String(item.index).padStart(3, '0')}-${keywordTitle}-${bsr}`);
+  const itemRoot = path.join(batchRoot, `${date}-${String(itemNumber(item)).padStart(3, '0')}-${keywordTitle}-${bsr}`);
   const dataDir = path.join(itemRoot, 'data');
   const reportsDir = path.join(itemRoot, 'reports');
   const excelDir = path.join(itemRoot, 'excel');
@@ -299,22 +390,89 @@ function findReportFile(reportsDir, suffix) {
     .find(file => fs.statSync(file).isFile()) || null;
 }
 
+function fileMtime(filePath) {
+  return filePath && fs.existsSync(filePath) ? fs.statSync(filePath).mtimeMs : 0;
+}
+
+function nonEmptyFile(filePath) {
+  return !!filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile() && fs.statSync(filePath).size > 0;
+}
+
+function outputIsCurrent(outputFile, dependencyFiles) {
+  if (!nonEmptyFile(outputFile)) return false;
+  const outputMtime = fs.statSync(outputFile).mtimeMs;
+  return dependencyFiles
+    .filter(filePath => filePath && fs.existsSync(filePath))
+    .every(filePath => outputMtime >= fileMtime(filePath));
+}
+
 function stepAlreadyDone(step, paths) {
-  if (step === 'marketData') return fs.existsSync(paths.dataFile);
+  if (step === 'marketData') {
+    if (!fs.existsSync(paths.dataFile)) return false;
+    const marketData = readJsonIfExists(paths.dataFile, null);
+    if (marketData?.skippedOver500) {
+      return isConfirmedHardSkip(marketData.skipDetails, 100, 800);
+    }
+    return true;
+  }
   if (step === 'seasonality') return fs.existsSync(paths.seasonalityFile);
   if (step === 'historicalData') return fs.existsSync(paths.historicalFile);
-  if (step === 'cpcOpportunity') return !fs.existsSync(paths.lifecycleFile) || fs.existsSync(paths.cpcFile);
-  if (step === 'mainReport') return !!findReportFile(paths.reportsDir, '_市场分析.html');
-  if (step === 'childAsinReport') return !!findReportFile(paths.reportsDir, '_子ASIN明细.html');
-  if (step === 'resultLog') return fs.existsSync(paths.resultLogFile);
+  if (step === 'cpcOpportunity') {
+    if (!fs.existsSync(paths.dataFile)) return false;
+    if (!fs.existsSync(paths.cpcFile)) return false;
+    const cpcMtime = fs.statSync(paths.cpcFile).mtimeMs;
+    const dataMtime = fs.statSync(paths.dataFile).mtimeMs;
+    const lifecycleMtime = fs.existsSync(paths.lifecycleFile) ? fs.statSync(paths.lifecycleFile).mtimeMs : 0;
+    return cpcMtime >= dataMtime && (!lifecycleMtime || cpcMtime >= lifecycleMtime);
+  }
+  if (step === 'mainReport') {
+    return outputIsCurrent(findReportFile(paths.reportsDir, '_市场分析.html'), [
+      paths.dataFile,
+      paths.seasonalityFile,
+      paths.historicalFile,
+      paths.lifecycleFile,
+      paths.cpcFile
+    ]);
+  }
+  if (step === 'childAsinReport') return nonEmptyFile(findReportFile(paths.reportsDir, '_子ASIN明细.html'));
+  if (step === 'resultLog') {
+    return outputIsCurrent(paths.resultLogFile, [
+      paths.dataFile,
+      paths.seasonalityFile,
+      paths.historicalFile,
+      paths.lifecycleFile,
+      paths.cpcFile,
+      findReportFile(paths.reportsDir, '_市场分析.html'),
+      findReportFile(paths.reportsDir, '_子ASIN明细.html')
+    ]);
+  }
   return false;
+}
+
+function completedItemArtifactsReady(paths) {
+  return ['mainReport', 'childAsinReport', 'resultLog']
+    .every(step => stepAlreadyDone(step, paths));
+}
+
+function completedItemProgressReady(entry) {
+  return REQUIRED_TERMINAL_STEPS.every(step => TERMINAL_ITEM_STATUSES.has(entry.steps?.[step]?.status)) &&
+    REQUIRED_COMPLETED_STEPS.every(step => entry.steps?.[step]?.status === 'completed') &&
+    entry.currentStep == null &&
+    entry.codexReviewGate == null &&
+    !entry.error;
+}
+
+function skippedItemProgressReady(entry) {
+  return String(entry.skipReason || '').trim() !== '' &&
+    entry.steps?.resultLog?.status === 'completed' &&
+    isConfirmedHardSkip(entry.skipDetails, 100, 800);
 }
 
 function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function runStep({ item, paths, progress, progressFile, resume, step, label, scriptName, args, skipWhenDone = true, logger, maxAttempts = 1 }) {
+function runStep({ item, paths, progress, progressFile, resume, step, label, scriptName, args, skipWhenDone = true, logger, maxAttempts = 1, envExtra = {} }) {
   if (resume && skipWhenDone && stepAlreadyDone(step, paths)) {
     markStep(progressFile, progress, item, step, 'completed', { skipped: true });
     console.log(`[${label}] skipped, output already exists`);
@@ -325,7 +483,7 @@ function runStep({ item, paths, progress, progressFile, resume, step, label, scr
   logger?.info('batch.step_start', { step, label, scriptName, args });
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      runNode(scriptName, args, label, { OALUR_RUN_LOG: paths.logFile });
+      runNode(scriptName, args, label, { OALUR_RUN_LOG: paths.logFile, ...envExtra });
       markStep(progressFile, progress, item, step, 'completed', { skipped: false, attempt });
       logger?.info('batch.step_complete', { step, label, attempt });
       return;
@@ -491,6 +649,130 @@ function buildMainReportArgs(paths) {
   return reportArgs;
 }
 
+function relativeFile(filePath) {
+  return filePath ? path.relative(process.cwd(), filePath) : '';
+}
+
+function codexReviewFiles(status) {
+  return [
+    status?.target?.reviewFile,
+    status?.semantic?.reviewFile
+  ].filter(filePath => filePath && fs.existsSync(filePath));
+}
+
+function codexReviewGateAlreadyApplied({ item, progress, step, dataFile, status }) {
+  const entry = getItemProgress(progress, item);
+  const stepState = entry.steps?.[step];
+  if (stepState?.status !== 'completed' || !stepState.updatedAt || !fs.existsSync(dataFile)) return false;
+  if (!status?.target?.ok || !status?.semantic?.ok) return false;
+  const stepTime = Date.parse(stepState.updatedAt);
+  if (!Number.isFinite(stepTime)) return false;
+  const dependencyTimes = [
+    fs.statSync(dataFile).mtimeMs,
+    ...codexReviewFiles(status).map(filePath => fs.statSync(filePath).mtimeMs)
+  ];
+  return dependencyTimes.every(mtime => mtime <= stepTime + 1000);
+}
+
+function serializeCodexReviewStatus(status) {
+  return {
+    targetOk: Boolean(status?.target?.ok),
+    targetMissingCount: status?.target?.missingCount || 0,
+    targetRequestedCategoryCount: status?.target?.requestedCategoryCount || 0,
+    targetAutoResolvedIgnoredCount: status?.target?.autoResolvedIgnoredCount || 0,
+    targetReviewFile: relativeFile(status?.target?.reviewFile),
+    semanticOk: Boolean(status?.semantic?.ok),
+    semanticMissingCount: status?.semantic?.missingCount || 0,
+    semanticCandidateCategoryCount: status?.semantic?.candidateCategoryCount || 0,
+    semanticCandidateListingCount: status?.semantic?.candidateListingCount || 0,
+    semanticAutoResolvedIgnoredCount: status?.semantic?.autoResolvedIgnoredCount || 0,
+    semanticReviewFile: relativeFile(status?.semantic?.reviewFile)
+  };
+}
+
+class CodexReviewGatePause extends Error {
+  constructor(message, details) {
+    super(message);
+    this.name = 'CodexReviewGatePause';
+    this.code = 'CODEX_REVIEW_REQUIRED';
+    this.details = details;
+  }
+}
+
+function failCodexReviewGate({ item, progress, progressFile, step, status, logger, phase }) {
+  const details = {
+    item: itemNumber(item),
+    keyword: item.keyword,
+    step,
+    phase,
+    ...serializeCodexReviewStatus(status)
+  };
+  markStep(progressFile, progress, item, step, 'awaiting_codex_review', {
+    ...details,
+    error: null,
+    pausedAt: new Date().toISOString()
+  });
+  logger?.warn(`codex_review.${phase}_pending`, details);
+  const missingCount = phase === 'target' ? details.targetMissingCount : details.semanticMissingCount;
+  const reviewFile = phase === 'target' ? details.targetReviewFile : details.semanticReviewFile;
+  throw new CodexReviewGatePause(
+    `Codex ${phase} review is incomplete: ${missingCount} decision(s) missing; update review file: ${reviewFile}`,
+    details
+  );
+}
+
+function ensureCodexReviewReady({ item, paths, progress, progressFile, dataFile, step, label, resume, logger }) {
+  if (!fs.existsSync(dataFile)) {
+    markStep(progressFile, progress, item, step, 'skipped', {
+      reason: 'data file not found',
+      dataFile: relativeFile(dataFile)
+    });
+    logger?.warn('codex_review.skipped', { step, reason: 'data file not found', dataFile: relativeFile(dataFile) });
+    return;
+  }
+
+  let status = codexReviewStatus(dataFile);
+  if (resume && codexReviewGateAlreadyApplied({ item, progress, step, dataFile, status })) {
+    markStep(progressFile, progress, item, step, 'completed', {
+      skipped: true,
+      ...serializeCodexReviewStatus(status)
+    });
+    logger?.info('codex_review.skipped_already_applied', { step, ...serializeCodexReviewStatus(status) });
+    return;
+  }
+
+  markStep(progressFile, progress, item, step, 'running', {
+    skipped: false,
+    dataFile: relativeFile(dataFile),
+    error: null
+  });
+
+  if (!status.target.ok) {
+    failCodexReviewGate({ item, progress, progressFile, step, status, logger, phase: 'target' });
+  }
+
+  runNode('refilter-data.js', [dataFile], `${label} apply target-category decisions`, { OALUR_RUN_LOG: paths.logFile });
+
+  status = codexReviewStatus(dataFile);
+  if (!status.target.ok) {
+    failCodexReviewGate({ item, progress, progressFile, step, status, logger, phase: 'target' });
+  }
+
+  if (!status.semantic.ok) {
+    failCodexReviewGate({ item, progress, progressFile, step, status, logger, phase: 'semantic' });
+  }
+
+  runNode('refilter-data.js', [dataFile], `${label} apply semantic decisions`, { OALUR_RUN_LOG: paths.logFile });
+
+  const finalStatus = codexReviewStatus(dataFile);
+  markStep(progressFile, progress, item, step, 'completed', {
+    skipped: false,
+    error: null,
+    ...serializeCodexReviewStatus(finalStatus)
+  });
+  logger?.info('codex_review.completed', { step, ...serializeCodexReviewStatus(finalStatus) });
+}
+
 function serializeGoogleTrendsFailureRecord(record, status) {
   const finalStatus = status || record.status || {};
   return {
@@ -506,6 +788,7 @@ function serializeGoogleTrendsFailureRecord(record, status) {
 function regenerateMainReportIfAlreadyBuilt({ record, progress, progressFile }) {
   const entry = getItemProgress(progress, record.item);
   if (entry.steps?.mainReport?.status !== 'completed') return;
+
   runStep({
     item: record.item,
     paths: record.paths,
@@ -591,7 +874,7 @@ function updateGoogleTrendsBatchHealth({ item, paths, progress, progressFile, ba
     );
   }
   progress.lastGoogleTrendsStatus = {
-    item: item.index,
+    item: itemNumber(item),
     keyword: item.keyword,
     ...status,
     consecutiveFailures: batchState.googleTrendsConsecutiveFailures,
@@ -620,12 +903,15 @@ function updateGoogleTrendsBatchHealth({ item, paths, progress, progressFile, ba
   return status;
 }
 
-function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState, batchLogger) {
+function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState, batchLogger, options = {}) {
   if (!item.keyword) {
-    throw new Error(`Product #${item.index} is missing keyword`);
+    throw new Error(`Product #${itemNumber(item)} is missing keyword`);
   }
 
   const paths = buildPaths(batchRoot, item, bsr);
+  const inputContextEnv = item.inputProductContext
+    ? { OALUR_INPUT_PRODUCT_CONTEXT: JSON.stringify(item.inputProductContext) }
+    : {};
   fs.mkdirSync(paths.dataDir, { recursive: true });
   fs.mkdirSync(paths.reportsDir, { recursive: true });
   fs.mkdirSync(paths.excelDir, { recursive: true });
@@ -635,21 +921,32 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     scriptName: 'run-keyword-json-batch.js'
   });
   logger.start({
-    item: item.index,
+    item: itemNumber(item),
+    sourceIndex: item.index,
     keyword: item.keyword,
     asin: item.asin || '',
+    inputProductContext: {
+      hasTitle: Boolean(item.inputProductContext?.title),
+      categoryCount: Array.isArray(item.inputProductContext?.categories) ? item.inputProductContext.categories.length : 0,
+      bulletPointCount: Array.isArray(item.inputProductContext?.bulletPoints) ? item.inputProductContext.bulletPoints.length : 0,
+      hasDescription: Boolean(item.inputProductContext?.description)
+    },
     itemRoot: path.relative(process.cwd(), paths.itemRoot),
     bsr,
     logFile: path.relative(process.cwd(), paths.logFile)
   });
 
   console.log('\n' + '='.repeat(70));
-  console.log(`#${item.index}: ${item.keyword}`);
+  console.log(`#${itemNumber(item)} (source #${item.index}): ${item.keyword}`);
   if (item.asin) console.log(`Seed ASIN: ${item.asin}`);
   console.log(`BSR: ${bsr}`);
   console.log(`Output: ${path.relative(process.cwd(), paths.itemRoot)}`);
   console.log(`Reference categories: ${item.referenceCategories.length}`);
   item.referenceCategories.forEach(category => console.log(`  - ${category}`));
+  if (item.inputProductContext?.title) console.log(`Input title: ${item.inputProductContext.title}`);
+  if (Array.isArray(item.inputProductContext?.bulletPoints) && item.inputProductContext.bulletPoints.length) {
+    console.log(`Input bullet points: ${item.inputProductContext.bulletPoints.length}`);
+  }
 
   const referenceArgs = args => appendReferenceCategoryArgs(args, item.referenceCategories);
 
@@ -657,6 +954,12 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     status: 'running',
     itemRoot: path.relative(process.cwd(), paths.itemRoot),
     startedAt: getItemProgress(progress, item).startedAt || new Date().toISOString(),
+    pausedAt: null,
+    failedAt: null,
+    codexReviewGate: null,
+    skippedAt: null,
+    skipReason: null,
+    skipDetails: null,
     error: null
   });
 
@@ -667,20 +970,22 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     progressFile,
     resume,
     step: 'marketData',
-    label: `#${item.index} extract market data`,
+    label: `#${itemNumber(item)} extract market data`,
     scriptName: 'extract-data.js',
-    args: referenceArgs([item.keyword, String(bsr), paths.dataFile, '--allow-over-400']),
+    args: referenceArgs([item.keyword, String(bsr), paths.dataFile]),
     logger,
-    maxAttempts: 2
+    maxAttempts: 2,
+    envExtra: inputContextEnv
   });
+  upsertInputProductContext(paths.dataFile, item.inputProductContext, item.referenceCategories, logger);
 
   const marketSkip = marketDataSkipStatus(paths.dataFile);
   if (marketSkip) {
-    markStep(progressFile, progress, item, 'seasonality', 'skipped', { reason: 'market data skipped over 500 products' });
-    markStep(progressFile, progress, item, 'historicalData', 'skipped', { reason: 'market data skipped over 500 products' });
-    markStep(progressFile, progress, item, 'cpcOpportunity', 'skipped', { reason: 'market data skipped over 500 products' });
-    markStep(progressFile, progress, item, 'mainReport', 'skipped', { reason: 'market data skipped over 500 products' });
-    markStep(progressFile, progress, item, 'childAsinReport', 'skipped', { reason: 'market data skipped over 500 products' });
+    markStep(progressFile, progress, item, 'seasonality', 'skipped', { reason: 'market data skipped over hard product limit' });
+    markStep(progressFile, progress, item, 'historicalData', 'skipped', { reason: 'market data skipped over hard product limit' });
+    markStep(progressFile, progress, item, 'cpcOpportunity', 'skipped', { reason: 'market data skipped over hard product limit' });
+    markStep(progressFile, progress, item, 'mainReport', 'skipped', { reason: 'market data skipped over hard product limit' });
+    markStep(progressFile, progress, item, 'childAsinReport', 'skipped', { reason: 'market data skipped over hard product limit' });
     markItemStatus(progressFile, progress, item, {
       status: 'skipped',
       currentStep: null,
@@ -691,21 +996,22 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     });
     logger.warn('batch.item_skipped_over_500', marketSkip);
     batchLogger?.warn('batch.item_skipped_over_500', {
-      item: item.index,
+      item: itemNumber(item),
       keyword: item.keyword,
       ...marketSkip
     });
     try {
       markStep(progressFile, progress, item, 'resultLog', 'running', { skipped: false });
-      runNode('generate-result-log.js', [paths.itemRoot], `#${item.index} generate result log`, { OALUR_RUN_LOG: paths.logFile });
+      runNode('generate-result-log.js', [paths.itemRoot], `#${itemNumber(item)} generate result log`, { OALUR_RUN_LOG: paths.logFile });
       markStep(progressFile, progress, item, 'resultLog', 'completed', { skipped: false });
     } catch (error) {
       markStep(progressFile, progress, item, 'resultLog', 'failed', { skipped: false, error: error.message });
       logger.warn('batch.result_log_failed', { error: error.message });
     }
+    markItemStatus(progressFile, progress, item, { currentStep: null });
     logger.end({
       status: 'skipped',
-      item: item.index,
+      item: itemNumber(item),
       keyword: item.keyword,
       ...marketSkip
     });
@@ -718,8 +1024,48 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     progress,
     progressFile,
     resume,
+    step: 'historicalData',
+    label: `#${itemNumber(item)} extract historical new products`,
+    scriptName: 'extract-data.js',
+    args: referenceArgs([item.keyword, String(bsr), paths.historicalFile, '--survival-baseline', 'auto']),
+    logger,
+    maxAttempts: 2,
+    envExtra: inputContextEnv
+  });
+  upsertInputProductContext(paths.historicalFile, item.inputProductContext, item.referenceCategories, logger);
+
+  ensureCodexReviewReady({
+    item,
+    paths,
+    progress,
+    progressFile,
+    dataFile: paths.dataFile,
+    step: 'marketCodexReview',
+    label: `#${itemNumber(item)} market Codex review`,
+    resume,
+    logger
+  });
+
+  ensureCodexReviewReady({
+    item,
+    paths,
+    progress,
+    progressFile,
+    dataFile: paths.historicalFile,
+    step: 'historicalCodexReview',
+    label: `#${itemNumber(item)} historical Codex review`,
+    resume,
+    logger
+  });
+
+  runStep({
+    item,
+    paths,
+    progress,
+    progressFile,
+    resume,
     step: 'seasonality',
-    label: `#${item.index} extract seasonality`,
+    label: `#${itemNumber(item)} extract seasonality`,
     scriptName: 'extract-seasonality.js',
     args: [item.keyword, paths.dataFile, paths.seasonalityFile],
     logger
@@ -734,60 +1080,32 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     itemLogger: logger
   });
 
+  const lifecycleFile = fileIfExists(paths.lifecycleFile);
+  let cpcFile = null;
+  const cpcArgs = lifecycleFile
+    ? [lifecycleFile, paths.dataFile, paths.cpcFile]
+    : ['--market-only', paths.dataFile, paths.cpcFile];
+  if (!lifecycleFile) {
+    console.warn(`Lifecycle file not found, using market data for CPC sample: ${path.relative(process.cwd(), paths.lifecycleFile)}`);
+    logger.warn('batch.cpc_lifecycle_missing_market_only', {
+      step: 'cpcOpportunity',
+      lifecycleFile: path.relative(process.cwd(), paths.lifecycleFile),
+      marketDataFile: path.relative(process.cwd(), paths.dataFile)
+    });
+  }
   runStep({
     item,
     paths,
     progress,
     progressFile,
     resume,
-    step: 'historicalData',
-    label: `#${item.index} extract historical new products`,
-    scriptName: 'extract-data.js',
-    args: referenceArgs([item.keyword, String(bsr), paths.historicalFile, '--survival-baseline', 'auto', '--allow-over-400']),
-    logger,
-    maxAttempts: 2
+    step: 'cpcOpportunity',
+    label: `#${itemNumber(item)} extract CPC opportunity`,
+    scriptName: 'extract-cpc-opportunity.js',
+    args: cpcArgs,
+    logger
   });
-
-  const lifecycleFile = fileIfExists(paths.lifecycleFile);
-  let cpcFile = null;
-  if (lifecycleFile) {
-    runStep({
-      item,
-      paths,
-      progress,
-      progressFile,
-      resume,
-      step: 'cpcOpportunity',
-      label: `#${item.index} extract CPC opportunity`,
-      scriptName: 'extract-cpc-opportunity.js',
-      args: [lifecycleFile, paths.dataFile, paths.cpcFile],
-      logger
-    });
-    cpcFile = fileIfExists(paths.cpcFile);
-  } else {
-    markStep(progressFile, progress, item, 'cpcOpportunity', 'skipped', { reason: 'lifecycle file not found' });
-    console.warn(`Lifecycle file not found, skipping CPC: ${path.relative(process.cwd(), paths.lifecycleFile)}`);
-    logger.warn('batch.step_skipped', {
-      step: 'cpcOpportunity',
-      reason: 'lifecycle file not found',
-      lifecycleFile: path.relative(process.cwd(), paths.lifecycleFile)
-    });
-  }
-
-  const semanticCoverage = semanticReviewCoverageStatus(paths.dataFile);
-  if (!semanticCoverage.ok) {
-    const details = {
-      ...semanticCoverage,
-      reviewFile: semanticCoverage.reviewFile ? path.relative(process.cwd(), semanticCoverage.reviewFile) : ''
-    };
-    markStep(progressFile, progress, item, 'codexSemanticReview', 'failed', details);
-    logger.error('codex_semantic_review.pending', details);
-    throw new Error(`Codex semantic review is incomplete: ${details.missingCount} candidate listing(s) lack decisions in ${details.reviewFile}`);
-  }
-  markStep(progressFile, progress, item, 'codexSemanticReview', semanticCoverage.skipped ? 'skipped' : 'completed', {
-    ...semanticCoverage,
-    reviewFile: semanticCoverage.reviewFile ? path.relative(process.cwd(), semanticCoverage.reviewFile) : ''
-  });
+  cpcFile = fileIfExists(paths.cpcFile);
 
   runStep({
     item,
@@ -796,7 +1114,7 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     progressFile,
     resume,
     step: 'mainReport',
-    label: `#${item.index} generate main report`,
+    label: `#${itemNumber(item)} generate main report`,
     scriptName: 'generate-report.js',
     args: buildMainReportArgs(paths),
     skipWhenDone: false,
@@ -810,7 +1128,7 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     progressFile,
     resume,
     step: 'childAsinReport',
-    label: `#${item.index} generate child ASIN report`,
+    label: `#${itemNumber(item)} generate child ASIN report`,
     scriptName: 'generate-child-asin-report.js',
     args: [paths.dataFile],
     skipWhenDone: false,
@@ -824,7 +1142,7 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     progressFile,
     resume,
     step: 'resultLog',
-    label: `#${item.index} generate result log`,
+    label: `#${itemNumber(item)} generate result log`,
     scriptName: 'generate-result-log.js',
     args: [paths.itemRoot],
     skipWhenDone: false,
@@ -835,11 +1153,17 @@ function runOne(item, batchRoot, bsr, progress, progressFile, resume, batchState
     status: 'completed',
     currentStep: null,
     completedAt: new Date().toISOString(),
+    pausedAt: null,
+    failedAt: null,
+    codexReviewGate: null,
+    skippedAt: null,
+    skipReason: null,
+    skipDetails: null,
     error: null
   });
   logger.end({
     status: 'completed',
-    item: item.index,
+    item: itemNumber(item),
     keyword: item.keyword,
     dataFile: path.relative(process.cwd(), paths.dataFile),
     seasonalityFile: path.relative(process.cwd(), paths.seasonalityFile),
@@ -869,7 +1193,9 @@ function main() {
   });
 
   const products = readBatchProducts(opts.jsonFile);
-  const targets = selectedProducts(products, opts.start, opts.limit);
+  const selected = selectedProducts(products, opts.start, opts.limit);
+  const outputStart = opts.outputStart == null ? opts.start : opts.outputStart;
+  const targets = selected.map((item, offset) => ({ ...item, outputIndex: outputStart + offset }));
   if (!targets.length) {
     throw new Error(`No products selected. products=${products.length}, start=${opts.start}, limit=${opts.limit || 'all'}`);
   }
@@ -877,7 +1203,7 @@ function main() {
   console.log(`Batch JSON: ${opts.jsonFile}`);
   console.log(`Batch root: ${path.relative(process.cwd(), batchRoot)}`);
   console.log(`Resume: ${opts.resume ? 'enabled' : 'disabled'}`);
-  console.log(`Products: ${products.length}, selected: ${targets.length}, start: ${opts.start}, limit: ${opts.limit || 'all'}, BSR: ${opts.bsr}`);
+  console.log(`Products: ${products.length}, selected: ${targets.length}, source start: ${opts.start}, output start: ${outputStart}, limit: ${opts.limit || 'all'}, BSR: ${opts.bsr}`);
 
   const progressFile = path.join(batchRoot, 'batch-progress.json');
   const progress = opts.resume
@@ -887,7 +1213,14 @@ function main() {
     googleTrendsConsecutiveFailures: Number(progress.googleTrendsConsecutiveFailures || 0)
   };
   progress.status = 'running';
-  progress.selected = { start: opts.start, limit: opts.limit || null, count: targets.length };
+  progress.pausedAt = null;
+  progress.awaitingCodexReviewItem = null;
+  progress.selected = { start: opts.start, outputStart, limit: opts.limit || null, count: targets.length };
+  progress.codexCanSendFinal = false;
+  progress.finalResponseGate = {
+    status: 'blocked',
+    reason: 'selected batch is still running'
+  };
   saveProgress(progressFile, progress);
   console.log(`Progress: ${path.relative(process.cwd(), progressFile)}`);
   console.log(`Batch log: ${path.relative(process.cwd(), batchLogger.logFile)}`);
@@ -898,6 +1231,7 @@ function main() {
     resume: opts.resume,
     totalProducts: products.length,
     selectedCount: targets.length,
+    outputStart,
     bsr: opts.bsr
   });
   ensureEdgeCdpBrowser(batchLogger);
@@ -905,29 +1239,106 @@ function main() {
   const outputs = [];
   for (const item of targets) {
     const entry = getItemProgress(progress, item);
-    if (opts.resume && (entry.status === 'completed' || entry.status === 'skipped')) {
-      const paths = buildPaths(batchRoot, item, opts.bsr);
-      if (!fs.existsSync(paths.resultLogFile) && fs.existsSync(paths.dataFile)) {
+    const paths = buildPaths(batchRoot, item, opts.bsr);
+    const terminalEntryReady = (entry.status === 'skipped' && skippedItemProgressReady(entry)) ||
+      (
+        entry.status === 'completed' &&
+        completedItemProgressReady(entry) &&
+        completedItemArtifactsReady(paths)
+      );
+    if (opts.resume && terminalEntryReady) {
+      if (!stepAlreadyDone('resultLog', paths) && fs.existsSync(paths.dataFile)) {
         try {
           markStep(progressFile, progress, item, 'resultLog', 'running', { skipped: false, backfilled: true });
-          runNode('generate-result-log.js', [paths.itemRoot], `#${item.index} generate result log`, { OALUR_RUN_LOG: paths.logFile });
+          runNode('generate-result-log.js', [paths.itemRoot], `#${itemNumber(item)} generate result log`, { OALUR_RUN_LOG: paths.logFile });
           markStep(progressFile, progress, item, 'resultLog', 'completed', { skipped: false, backfilled: true });
         } catch (error) {
           markStep(progressFile, progress, item, 'resultLog', 'failed', { skipped: false, backfilled: true, error: error.message });
           batchLogger.warn('batch.result_log_failed', {
-            item: item.index,
+            item: itemNumber(item),
             keyword: item.keyword,
             error: error.message
           });
         }
+        markItemStatus(progressFile, progress, item, { currentStep: null });
       }
-      console.log(`\n#${item.index}: ${item.keyword} skipped, already ${entry.status}`);
+      console.log(`\n#${itemNumber(item)} (source #${item.index}): ${item.keyword} skipped, already ${entry.status}`);
       outputs.push(paths);
       continue;
+    }
+    if (opts.resume && entry.status === 'completed') {
+      console.warn(`\n#${itemNumber(item)}: recorded as completed but progress or final artifacts are incomplete/stale; rerunning required steps.`);
     }
     try {
       outputs.push(runOne(item, batchRoot, opts.bsr, progress, progressFile, opts.resume, batchState, batchLogger));
     } catch (error) {
+      if (error instanceof CodexReviewGatePause) {
+        const pausedAt = new Date().toISOString();
+        markItemStatus(progressFile, progress, item, {
+          status: 'awaiting_codex_review',
+          currentStep: error.details.step,
+          pausedAt,
+          failedAt: null,
+          error: null,
+          codexReviewGate: error.details
+        });
+        progress.status = 'awaiting_codex_review';
+        progress.pausedAt = pausedAt;
+        progress.failedAt = null;
+        progress.lastFailedItem = null;
+        progress.awaitingCodexReviewItem = itemNumber(item);
+        progress.codexCanSendFinal = false;
+        progress.finalResponseGate = {
+          status: 'blocked',
+          reason: 'Codex review is required in the current conversation',
+          item: itemNumber(item),
+          phase: error.details.phase
+        };
+        saveProgress(progressFile, progress);
+
+        const completionCheck = evaluateBatchTurnCompletion(progress);
+
+        const continuation = {
+          event: 'CODEX_REVIEW_REQUIRED',
+          terminal: false,
+          codexCanSendFinal: false,
+          finalResponseBlocked: true,
+          autoScriptStatus: 'paused',
+          codexTurnStatus: 'must_continue_in_current_conversation',
+          item: itemNumber(item),
+          keyword: item.keyword,
+          phase: error.details.phase,
+          missingCount: error.details.phase === 'target'
+            ? error.details.targetMissingCount
+            : error.details.semanticMissingCount,
+          reviewFile: error.details.phase === 'target'
+            ? error.details.targetReviewFile
+            : error.details.semanticReviewFile,
+          requiredActions: [
+            'Read every pending candidate and its source evidence.',
+            'Show the per-item judgments in the current Codex conversation.',
+            'Write concrete local-Codex decisions to the review file.',
+            'Run the review coverage validator.',
+            'Resume this exact batch command after validation passes.',
+            'Do not end the Codex turn or ask the user to continue merely because this gate paused the script.'
+          ],
+          resumeArgs: process.argv.slice(2),
+          completionCheckCommand: `node verify-batch-turn-completion.js "${path.relative(process.cwd(), progressFile)}"`,
+          completionBlockers: completionCheck.blockers
+        };
+        batchLogger.end({
+          status: 'awaiting_codex_review',
+          item: itemNumber(item),
+          keyword: item.keyword,
+          phase: error.details.phase,
+          reviewFile: continuation.reviewFile
+        });
+        console.log('\n' + '='.repeat(70));
+        console.log('AUTOMATION PAUSED FOR LOCAL CODEX REVIEW — CURRENT CODEX TURN MUST CONTINUE');
+        console.log(JSON.stringify(continuation, null, 2));
+        console.log('This is a script pause, not a user-action blocker and not task completion.');
+        return;
+      }
       const failedEntry = getItemProgress(progress, item);
       if (failedEntry.currentStep) {
         markStep(progressFile, progress, item, failedEntry.currentStep, 'failed', { skipped: false, error: error.message });
@@ -940,10 +1351,16 @@ function main() {
       });
       progress.status = 'failed';
       progress.failedAt = new Date().toISOString();
-      progress.lastFailedItem = item.index;
+      progress.lastFailedItem = itemNumber(item);
+      progress.codexCanSendFinal = false;
+      progress.finalResponseGate = {
+        status: 'blocked',
+        reason: error.message,
+        item: itemNumber(item)
+      };
       saveProgress(progressFile, progress);
       batchLogger.error('batch.item_failed', {
-        item: item.index,
+        item: itemNumber(item),
         keyword: item.keyword,
         error: error.message
       });
@@ -953,6 +1370,34 @@ function main() {
 
   progress.status = 'completed';
   progress.completedAt = new Date().toISOString();
+  progress.pausedAt = null;
+  progress.failedAt = null;
+  progress.lastFailedItem = null;
+  progress.awaitingCodexReviewItem = null;
+  progress.codexCanSendFinal = false;
+  progress.finalResponseGate = {
+    status: 'checking',
+    reason: 'verifying every selected item before allowing the final response'
+  };
+  saveProgress(progressFile, progress);
+
+  const completionCheck = evaluateBatchTurnCompletion(progress, { ignorePersistedFinalGate: true });
+  if (!completionCheck.codexCanSendFinal) {
+    progress.status = 'completion_check_failed';
+    progress.codexCanSendFinal = false;
+    progress.finalResponseGate = {
+      status: 'blocked',
+      reason: 'batch completion verification failed',
+      blockers: completionCheck.blockers
+    };
+    saveProgress(progressFile, progress);
+    throw new Error(`Batch completion verification failed: ${completionCheck.blockers.join(' | ')}`);
+  }
+  progress.codexCanSendFinal = true;
+  progress.finalResponseGate = {
+    status: 'allowed',
+    reason: 'every selected item completed or was business-skipped with a result log'
+  };
   saveProgress(progressFile, progress);
   batchLogger.end({
     status: 'completed',
@@ -963,6 +1408,19 @@ function main() {
   console.log('\n' + '='.repeat(70));
   console.log('Batch completed. Output roots:');
   outputs.forEach(paths => console.log(`  - ${path.relative(process.cwd(), paths.itemRoot)}`));
+  console.log(JSON.stringify({
+    ...completionCheck,
+    codexCanSendFinal: true,
+    codexTurnStatus: 'final_response_allowed'
+  }, null, 2));
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  CodexReviewGatePause,
+  failCodexReviewGate,
+  serializeCodexReviewStatus
+};

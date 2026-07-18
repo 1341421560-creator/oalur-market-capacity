@@ -1,0 +1,8 @@
+2026-07-10 12:17:48 | ERROR | extract-data.js | run.failed
+  error: BSR range was not applied; expected 1-basket, got 1-
+  stack: 
+    Error: BSR range was not applied; expected 1-basket, got 1-
+        at setBsrRange (C:\Users\AI454\OneDrive\Desktop\project\oalur-market-capacity\extract-data.js:1155:11)
+        at async extractKeyword (C:\Users\AI454\OneDrive\Desktop\project\oalur-market-capacity\extract-data.js:1199:3)
+        at async C:\Users\AI454\OneDrive\Desktop\project\oalur-market-capacity\extract-data.js:1389:16
+

@@ -23,25 +23,83 @@ const {
   applyCodexSemanticReviewExclusion,
   buildCodexSemanticReviewCandidates,
   loadCodexSemanticReview,
-  REVIEW_STANDARD
+  REVIEW_STANDARD,
+  writeCodexSemanticReviewRequest
 } = require('./codex-semantic-review');
 const {
   TARGET_CATEGORY_REVIEW_STANDARD,
   applyTargetCategoryCodexReview,
   buildTargetCategoryCodexReviewRequest,
   loadTargetCategoryCodexReview,
+  requestFromExistingTargetCategoryReview,
+  targetCategoryReviewFileForDataFile,
   writeTargetCategoryCodexReviewRequest
 } = require('./target-category-codex-review');
+const {
+  applySalesFloorFilter,
+  salesFloorMinFromEnv
+} = require('./sales-floor-filter');
 const { createRunLogger } = require('./run-log');
+const { dedupeCanonicalVariantRows } = require('./canonical-variant-rows');
+const {
+  buildInputProductContext,
+  parseInputProductContextEnv
+} = require('./input-product-context');
+const {
+  confirmedFirstPageMetrics,
+  estimateRowsFromConfirmedFirstPage
+} = require('./oalur-query-guard');
 
 const OALUR_FILTER_URL = 'https://vip.oalur.com/insight/filter/index?site=US';
 const OALUR_PRODUCT_INFO_URL = 'https://vip.oalur.com/products/information';
-const OALUR_NAV_TIMEOUT_MS = 30000;
+const OALUR_NAV_TIMEOUT_MS = 60000;
+
+async function hasBsrFilterReady(page) {
+  return page.evaluate(() => {
+    const labels = [...document.querySelectorAll('.el-form-item__label, label, span')];
+    return labels.some((label) => {
+      const text = label.innerText || '';
+      if (!((text.includes('BSR') && (text.includes('大类') || text.includes('澶х被'))) ||
+        text.includes('大类BSR排名') || text.includes('澶х被BSR鎺掑悕'))) return false;
+      const parent = label.closest('.el-form-item') || label.parentElement?.parentElement;
+      return (parent?.querySelectorAll('input[type="number"]')?.length || 0) >= 2;
+    });
+  }).catch(() => false);
+}
+
+async function waitForBsrFilterReady(page, contextLabel) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const found = await page.waitForFunction(() => {
+      const labels = [...document.querySelectorAll('.el-form-item__label, label, span')];
+      return labels.some((label) => {
+        const text = label.innerText || '';
+        if (!((text.includes('BSR') && (text.includes('大类') || text.includes('澶х被'))) ||
+          text.includes('大类BSR排名') || text.includes('澶х被BSR鎺掑悕'))) return false;
+        const parent = label.closest('.el-form-item') || label.parentElement?.parentElement;
+        return (parent?.querySelectorAll('input[type="number"]')?.length || 0) >= 2;
+      });
+    }, { timeout: 30000 }).then(() => true).catch(() => false);
+    if (found) return;
+    if (attempt === 1) {
+      console.warn(`${contextLabel}: BSR filter did not hydrate; reloading the Oalur filter page once.`);
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
+    } else if (attempt === 2) {
+      console.warn(`${contextLabel}: BSR filter is still unavailable; navigating to a fresh filter route once.`);
+      await page.goto(OALUR_FILTER_URL, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
+    }
+  }
+  throw new Error(`${contextLabel}: BSR range controls did not load after extended waiting, reload, and fresh navigation`);
+}
 
 async function gotoOalurFilter(page, contextLabel = 'Oalur page') {
   try {
     await activatePage(page);
+    if (page.url().startsWith(OALUR_FILTER_URL) && await hasBsrFilterReady(page)) {
+      console.log(`${contextLabel}: reusing the already-hydrated Oalur filter page.`);
+      return;
+    }
     await page.goto(OALUR_FILTER_URL, { waitUntil: 'domcontentloaded', timeout: OALUR_NAV_TIMEOUT_MS });
+    await waitForBsrFilterReady(page, contextLabel);
   } catch (error) {
     if (String(error?.message || '').toLowerCase().includes('timeout')) {
       console.error(`ERROR: ${contextLabel} navigation timed out after 30s. Stop execution and report to user.`);
@@ -62,7 +120,19 @@ async function isVariantSkuChecked(page) {
 }
 
 async function ensureVariantSkuEnabled(page) {
-  await page.waitForSelector('.var-sku .el-checkbox', { timeout: 10000 });
+  const variantControlFound = await page.waitForSelector('.var-sku .el-checkbox', { timeout: 10000 }).then(() => true).catch(() => false);
+  if (!variantControlFound) {
+    const emptyState = await page.evaluate(() => {
+      const rows = document.querySelectorAll('.el-table__body-wrapper table tbody tr').length;
+      const text = document.body?.innerText || '';
+      return rows === 0 && /暂无数据|暂无结果|没有数据|No data|No results/i.test(text);
+    });
+    if (historicalNewOnly && emptyState) {
+      console.log('Historical new-only mode: no matching rows for this snapshot; treat as zero new products');
+      return false;
+    }
+    throw new Error('Variant checkbox not found; stop to avoid missing variant data');
+  }
   let checked = await isVariantSkuChecked(page);
   if (checked === null) throw new Error('Variant checkbox not found; stop to avoid missing variant data');
   if (!checked) {
@@ -93,6 +163,7 @@ async function ensureVariantSkuEnabled(page) {
   checked = await isVariantSkuChecked(page);
   if (!checked) throw new Error('Variant checkbox is not checked; stop before first-page extraction');
   console.log('Variant checkbox checked before extraction');
+  return true;
 }
 
 function safeSegment(value) {
@@ -120,9 +191,10 @@ function outputDirs(taskName) {
   };
 }
 
-// Parse product age strings from the search table.
-const MAX_PAGES = 20;
-const HARD_SKIP_ROWS = 500;
+// Search result pagination defaults.
+const PAGE_SIZE = 100;
+const HARD_SKIP_ROWS = 800;
+const MAX_PAGES = Math.ceil(HARD_SKIP_ROWS / PAGE_SIZE);
 
 // 閸濅胶琚惔鏇犲殠鐞涱煉绱欐禒?SKILL.md 閸氬本顒炵紒瀛樺Б閿?
 const CATEGORY_BSR_TABLE = [
@@ -150,7 +222,7 @@ function autoDetectBsr(keyword) {
       return cat.bsr;
     }
   }
-  return 10000; // 姒涙顓?
+  return 25000; // Default market scope
 }
 
 // 閸欏倹鏆熼敍姘彠闁款喛鐦?,閸忔娊鏁拠?,... [BSR娑撳﹪妾篯 [鏉堟挸鍤弬鍥︽閸氬硶 [--time-filter YYYY-MM]
@@ -172,11 +244,30 @@ const survivalBaselineMode = survivalBaselineIdx > -1 ? (process.argv[survivalBa
 const survivalBaseline = survivalBaselineMode === 'auto' ? selectSurvivalBaselinePeriod(new Date()) : null;
 const timeFilterRaw = timeFilterIdx > -1 ? process.argv[timeFilterIdx + 1] : (survivalBaseline ? survivalBaseline.selectedYm : null);
 const historicalNewOnly = Boolean(survivalBaseline) || process.argv.includes('--historical-new-only');
-const allowOverPageLimit = process.argv.includes('--allow-over-400') || process.env.OALUR_ALLOW_OVER_400 === '1';
+const targetCategoryReviewFileIdx = process.argv.indexOf('--target-category-review-file');
+const explicitTargetCategoryReviewFile = targetCategoryReviewFileIdx > -1
+  ? process.argv[targetCategoryReviewFileIdx + 1]
+  : null;
+const allowOverPageLimit = process.argv.includes('--allow-over-800') || process.env.OALUR_ALLOW_OVER_800 === '1'
+  || process.argv.includes('--allow-over-600') || process.env.OALUR_ALLOW_OVER_600 === '1'
+  || process.argv.includes('--allow-over-400') || process.env.OALUR_ALLOW_OVER_400 === '1';
 const bsrMinIdx = process.argv.indexOf('--bsr-min');
 const minBsr = bsrMinIdx > -1 ? String(process.argv[bsrMinIdx + 1] || '1') : String(process.env.OALUR_BSR_MIN || '1');
-const salesFloorMin = Number(process.env.OALUR_SALES_FLOOR_MIN || 200);
+const salesFloorMin = salesFloorMinFromEnv();
 const referenceCategories = parseReferenceCategoryArgs(process.argv.slice(2));
+
+function sharedTargetCategoryReviewFileForHistoricalData(dataFile) {
+  if (explicitTargetCategoryReviewFile) {
+    return path.isAbsolute(explicitTargetCategoryReviewFile)
+      ? explicitTargetCategoryReviewFile
+      : path.resolve(path.dirname(path.resolve(dataFile)), explicitTargetCategoryReviewFile);
+  }
+  const resolved = path.resolve(dataFile);
+  const historicalBase = path.basename(resolved).replace(/\.json$/i, '');
+  const currentBase = historicalBase.replace(/-historical(?:-[^.]+)?$/i, '');
+  if (currentBase === historicalBase) return null;
+  return targetCategoryReviewFileForDataFile(path.join(path.dirname(resolved), `${currentBase}-data.json`));
+}
 let timeFilterLabel = null; // Example: 2025年12月
 if (timeFilterRaw) {
   const [y, m] = timeFilterRaw.split('-');
@@ -201,6 +292,12 @@ const keywords = keywordsRaw.split(',').map(k => k.trim()).filter(Boolean);
 if (keywords.length > 1 && !explicitOutFile) {
   outFile = path.join(outputDirs(keywords.join('-')).data, 'merged-data.json');
 }
+const envInputProductContext = parseInputProductContextEnv();
+const inputProductContext = buildInputProductContext(envInputProductContext || {}, {
+  keyword: keywords[0] || keywords.join(' + '),
+  category: referenceCategories[0] || '',
+  categories: referenceCategories
+});
 
 const logger = createRunLogger({
   outputFile: outFile,
@@ -209,6 +306,13 @@ const logger = createRunLogger({
 });
 logger.start({
   keywords,
+  inputProductContext: {
+    asin: inputProductContext.asin || '',
+    hasTitle: Boolean(inputProductContext.title),
+    categoryCount: Array.isArray(inputProductContext.categories) ? inputProductContext.categories.length : 0,
+    bulletPointCount: Array.isArray(inputProductContext.bulletPoints) ? inputProductContext.bulletPoints.length : 0,
+    hasDescription: Boolean(inputProductContext.description)
+  },
   outFile: path.relative(process.cwd(), outFile),
   args: process.argv.slice(2),
   historicalNewOnly,
@@ -220,7 +324,7 @@ console.log(`Run log: ${path.relative(process.cwd(), logger.logFile)}`);
 const runStats = {
   pageLimit: {
     maxPages: MAX_PAGES,
-    maxRows: MAX_PAGES * 20,
+    maxRows: MAX_PAGES * PAGE_SIZE,
     hardSkipRows: HARD_SKIP_ROWS,
     allowOverPageLimit
   },
@@ -237,7 +341,7 @@ class SkipOver500Error extends Error {
 }
 
 function estimateRowsFromFirstPage(result) {
-  return Math.max(result.total || 0, result.lastPage * 20);
+  return estimateRowsFromConfirmedFirstPage(result, PAGE_SIZE);
 }
 
 function writeSkippedOver500Output(details) {
@@ -257,12 +361,22 @@ function writeSkippedOver500Output(details) {
     filteredCount: 0,
     excludedCount: 0,
     targetMatchedCount: 0,
+    analysisSalesFloor: salesFloorMin,
     salesFloorExcludedCount: 0,
+    salesFloorExcludedSummary: {
+      salesFloorMin,
+      count: 0,
+      positiveLowSalesCount: 0,
+      missingOrZeroSalesCount: 0,
+      asins: [],
+      sample: []
+    },
     targetCategory: '',
     targetCategories: [],
     equivalentCandidateCategories: [],
     codexSemanticReviewStandard: REVIEW_STANDARD,
     targetCategoryCodexReviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+    inputProductContext,
     referenceCategories,
     categorySelection: [],
     categoryDistribution: [],
@@ -271,6 +385,7 @@ function writeSkippedOver500Output(details) {
       logFile: path.relative(process.cwd(), logger.logFile),
       outputFile: path.relative(process.cwd(), outFile),
       keywords,
+      inputProductContext,
       bsrRange: `${minBsr}-${maxBsr}`,
       skipped: true,
       skippedOver500: true,
@@ -317,15 +432,9 @@ if (userBsr) {
   console.log(`Keywords: ${keywords.join(' | ')}`);
     console.log(`BSR range: ${minBsr}-${maxBsr} (user specified)`);
 } else {
-  const detected = autoDetectBsr(firstKw);
-  if (detected === null) {
-    maxBsr = '10000';
-    console.log('Category needs manual BSR review; using default 10000');
-  } else {
-    maxBsr = String(detected);
-    console.log(`Keywords: ${keywords.join(' | ')}`);
-    console.log(`BSR range: ${minBsr}-${maxBsr} (auto detected)`);
-  }
+  maxBsr = '25000';
+  console.log(`Keywords: ${keywords.join(' | ')}`);
+  console.log(`BSR range: ${minBsr}-${maxBsr} (default)`);
 }
 
 logger.info('market.parameters', {
@@ -373,7 +482,7 @@ if (keywords.length > 1) {
     if (timeFilterRaw) childArgs.push('--time-filter', timeFilterRaw);
     if (historicalNewOnly) childArgs.push('--historical-new-only');
     if (minBsr !== '1') childArgs.push('--bsr-min', minBsr);
-    if (allowOverPageLimit) childArgs.push('--allow-over-400');
+    if (allowOverPageLimit) childArgs.push('--allow-over-800');
     appendReferenceCategoryArgs(childArgs, referenceCategories);
     childArgs.push('--skip-keyword-intent-analysis');
     runNodeScript(childArgs, `extract ${kw}`);
@@ -448,12 +557,99 @@ const extractPageData = (page) => page.evaluate(() => {
       });
     }
   });
-  const totalText = document.body.innerText.match(/(?:鍏眧total)\s*(\d+)\s*(?:鏉items|results)?/i);
-  const total = totalText ? parseInt(totalText[1]) : 0;
-  const pagerBtns = document.querySelectorAll('.el-pager .number');
-  const lastPage = pagerBtns.length > 0 ? parseInt(pagerBtns[pagerBtns.length - 1].innerText) : 1;
-  return { data, total, lastPage };
+  const bodyText = document.body?.innerText || '';
+  const totalPatterns = [
+    /总计\s*[:：]?\s*([\d,]+)\s*条/i,
+    /共\s*([\d,]+)\s*条/i,
+    /\btotal\s*[:：]?\s*([\d,]+)\s*(?:items|results)?/i,
+    /(?:鍏眧total)\s*([\d,]+)\s*(?:鏉items|results)?/i
+  ];
+  const totalMatch = totalPatterns.map(pattern => bodyText.match(pattern)).find(Boolean);
+  const total = totalMatch ? parseInt(totalMatch[1].replace(/,/g, ''), 10) : 0;
+  const pagerNumbers = [...document.querySelectorAll('.el-pager .number')]
+    .map(button => parseInt((button.innerText || '').trim(), 10))
+    .filter(Number.isFinite);
+  const lastPage = pagerNumbers.length ? Math.max(...pagerNumbers) : 1;
+  return {
+    data,
+    total,
+    totalText: totalMatch ? totalMatch[0] : '',
+    lastPage
+  };
 });
+
+function profitColumnCoverage(rows) {
+  const total = Array.isArray(rows) ? rows.length : 0;
+  const hasProfit = item => /\d/.test(String(item?.margin || ''));
+  const hasWeight = item => /\d/.test(String(item?.weight || ''));
+  return {
+    total,
+    marginRows: rows.filter(hasProfit).length,
+    weightRows: rows.filter(hasWeight).length,
+    marginCoveragePct: total ? rows.filter(hasProfit).length / total * 100 : 0,
+    weightCoveragePct: total ? rows.filter(hasWeight).length / total * 100 : 0
+  };
+}
+
+async function revealProfitColumns(page) {
+  await page.evaluate(() => {
+    const scrollables = [
+      ...document.querySelectorAll('.el-table__body-wrapper, .el-table__header-wrapper, .el-table__footer-wrapper')
+    ].filter(el => el && el.scrollWidth > el.clientWidth);
+
+    for (const el of scrollables) {
+      el.scrollLeft = el.scrollWidth;
+      el.dispatchEvent(new Event('scroll', { bubbles: true }));
+    }
+
+    const headers = [...document.querySelectorAll('.el-table__header-wrapper th, .el-table th')];
+    const profitHeader = headers.find(th => /FBA|毛利|濮ｆ稑|利润|profit|margin/i.test(th.innerText || ''));
+    if (profitHeader) {
+      profitHeader.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
+
+    window.dispatchEvent(new Event('resize'));
+  });
+}
+
+async function extractPageDataWithProfitRetry(page, keyword, pageLabel) {
+  let result = await extractPageData(page);
+  let coverage = profitColumnCoverage(result.data);
+  if (!result.data.length || coverage.marginRows > 0) {
+    return result;
+  }
+
+  const attempts = [];
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    attempts.push({ attempt, before: coverage });
+    console.warn(`Profit columns empty on ${pageLabel}; retry ${attempt}/3 by revealing Oalur profit columns...`);
+    await revealProfitColumns(page);
+    await new Promise(r => setTimeout(r, 1200));
+    result = await extractPageData(page);
+    coverage = profitColumnCoverage(result.data);
+    attempts[attempts.length - 1].after = coverage;
+    if (coverage.marginRows > 0) {
+      console.log(`Profit columns recovered on ${pageLabel}: margin ${coverage.marginRows}/${coverage.total}, weight ${coverage.weightRows}/${coverage.total}`);
+      logger.info('market.profit_columns_recovered', {
+        keyword,
+        pageLabel,
+        attempts,
+        finalCoverage: coverage
+      });
+      return result;
+    }
+  }
+
+  console.warn(`Profit columns still empty on ${pageLabel}: margin 0/${coverage.total}, weight ${coverage.weightRows}/${coverage.total}`);
+  logger.warn('market.profit_columns_missing_after_retry', {
+    keyword,
+    pageLabel,
+    attempts,
+    finalCoverage: coverage,
+    actionRequired: 'Oalur profit columns were present in the data source but did not populate in the scraped table; rerun or inspect page layout/permissions.'
+  });
+  return result;
+}
 
 function historicalSnapshotDate() {
   if (!timeFilterRaw) return null;
@@ -649,8 +845,7 @@ function extractMainBsrTrendSummary(payload) {
   };
 }
 
-async function extractAsinCategoryFromProductInformation(browser, asin) {
-  const page = await browser.newPage();
+async function extractAsinCategoryFromProductInformationPage(page, asin) {
   const state = { basicInfo: null, bsrTrend: null };
   const onResponse = async response => {
     const url = response.url();
@@ -714,6 +909,14 @@ async function extractAsinCategoryFromProductInformation(browser, asin) {
     };
   } finally {
     page.off('response', onResponse);
+  }
+}
+
+async function extractAsinCategoryFromProductInformation(browser, asin) {
+  const page = await browser.newPage();
+  try {
+    return await extractAsinCategoryFromProductInformationPage(page, asin);
+  } finally {
     await page.close().catch(() => {});
   }
 }
@@ -729,38 +932,45 @@ async function supplementUnknownCategories(browser, items) {
   const summary = { checked: 0, supplemented: 0, failed: 0, items: [] };
   const cache = new Map();
   const concurrency = Math.max(1, Math.min(5, Number(process.env.OALUR_CATEGORY_SUPPLEMENT_CONCURRENCY || 5)));
+  const workerCount = Math.min(concurrency, uniqueAsins.length);
+  console.log(`Category supplement concurrency: ${workerCount}`);
   let cursor = 0;
   async function worker() {
-    while (cursor < uniqueAsins.length) {
-      const asin = uniqueAsins[cursor++];
-      summary.checked += 1;
-      try {
-        const result = await extractAsinCategoryFromProductInformation(browser, asin);
-        cache.set(asin, result);
-        if (result.category && !isUnknownCategoryValue(result.category)) {
-          summary.supplemented += 1;
-          console.log(`  ${asin}: category supplemented -> ${result.category}`);
-        } else {
+    const page = await browser.newPage();
+    try {
+      while (cursor < uniqueAsins.length) {
+        const asin = uniqueAsins[cursor++];
+        summary.checked += 1;
+        try {
+          const result = await extractAsinCategoryFromProductInformationPage(page, asin);
+          cache.set(asin, result);
+          if (result.category && !isUnknownCategoryValue(result.category)) {
+            summary.supplemented += 1;
+            console.log(`  ${asin}: category supplemented -> ${result.category}`);
+          } else {
+            summary.failed += 1;
+            console.warn(`  ${asin}: category not found on product search detail`);
+          }
+          summary.items.push({
+            asin,
+            category: result.category || '',
+            categories: result.categories || [],
+            listingDate: result.listingDate || '',
+            source: result.source,
+            bsrTrend: result.bsrTrend
+          });
+        } catch (error) {
           summary.failed += 1;
-          console.warn(`  ${asin}: category not found on product search detail`);
+          cache.set(asin, { asin, category: '', source: 'error', error: error.message });
+          summary.items.push({ asin, category: '', source: 'error', error: error.message });
+          console.warn(`  ${asin}: category supplement failed: ${error.message}`);
         }
-        summary.items.push({
-          asin,
-          category: result.category || '',
-          categories: result.categories || [],
-          listingDate: result.listingDate || '',
-          source: result.source,
-          bsrTrend: result.bsrTrend
-        });
-      } catch (error) {
-        summary.failed += 1;
-        cache.set(asin, { asin, category: '', source: 'error', error: error.message });
-        summary.items.push({ asin, category: '', source: 'error', error: error.message });
-        console.warn(`  ${asin}: category supplement failed: ${error.message}`);
       }
+    } finally {
+      await page.close().catch(() => {});
     }
   }
-  await Promise.all(Array.from({ length: Math.min(concurrency, uniqueAsins.length) }, () => worker()));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
   for (const item of targets) {
     const result = cache.get(item.asin);
     if (!result?.category || isUnknownCategoryValue(result.category)) continue;
@@ -791,31 +1001,38 @@ async function supplementMissingListingDates(browser, items) {
   const summary = { checked: 0, supplemented: 0, failed: 0, items: [] };
   const cache = new Map();
   const concurrency = Math.max(1, Math.min(5, Number(process.env.OALUR_LISTING_DATE_SUPPLEMENT_CONCURRENCY || 5)));
+  const workerCount = Math.min(concurrency, uniqueAsins.length);
+  console.log(`Listing date supplement concurrency: ${workerCount}`);
   let cursor = 0;
   async function worker() {
-    while (cursor < uniqueAsins.length) {
-      const asin = uniqueAsins[cursor++];
-      summary.checked += 1;
-      try {
-        const result = await extractAsinCategoryFromProductInformation(browser, asin);
-        cache.set(asin, result);
-        if (result.listingDate) {
-          summary.supplemented += 1;
-          console.log(`  ${asin}: listing date supplemented -> ${result.listingDate}`);
-        } else {
+    const page = await browser.newPage();
+    try {
+      while (cursor < uniqueAsins.length) {
+        const asin = uniqueAsins[cursor++];
+        summary.checked += 1;
+        try {
+          const result = await extractAsinCategoryFromProductInformationPage(page, asin);
+          cache.set(asin, result);
+          if (result.listingDate) {
+            summary.supplemented += 1;
+            console.log(`  ${asin}: listing date supplemented -> ${result.listingDate}`);
+          } else {
+            summary.failed += 1;
+            console.warn(`  ${asin}: listing date not found on product information page`);
+          }
+          summary.items.push({ asin, listingDate: result.listingDate || '', source: result.source });
+        } catch (error) {
           summary.failed += 1;
-          console.warn(`  ${asin}: listing date not found on product information page`);
+          cache.set(asin, { asin, listingDate: '', source: 'error', error: error.message });
+          summary.items.push({ asin, listingDate: '', source: 'error', error: error.message });
+          console.warn(`  ${asin}: listing date supplement failed: ${error.message}`);
         }
-        summary.items.push({ asin, listingDate: result.listingDate || '', source: result.source });
-      } catch (error) {
-        summary.failed += 1;
-        cache.set(asin, { asin, listingDate: '', source: 'error', error: error.message });
-        summary.items.push({ asin, listingDate: '', source: 'error', error: error.message });
-        console.warn(`  ${asin}: listing date supplement failed: ${error.message}`);
       }
+    } finally {
+      await page.close().catch(() => {});
     }
   }
-  await Promise.all(Array.from({ length: Math.min(concurrency, uniqueAsins.length) }, () => worker()));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
   for (const item of targets) {
     const result = cache.get(item.asin);
     if (!result?.listingDate) continue;
@@ -890,6 +1107,8 @@ async function supplementZeroParentRatings(browser, items) {
   console.log(`Parent Ratings supplement: ${targets.length} parent listings have zero Ratings`);
   const summary = { checked: 0, supplemented: 0, failed: 0, items: [] };
   const concurrency = Math.max(1, Math.min(5, Number(process.env.OALUR_RATINGS_SUPPLEMENT_CONCURRENCY || 5)));
+  const workerCount = Math.min(concurrency, targets.length);
+  console.log(`Parent Ratings supplement concurrency: ${workerCount}`);
   let cursor = 0;
   async function worker() {
     const page = await browser.newPage();
@@ -931,7 +1150,7 @@ async function supplementZeroParentRatings(browser, items) {
       await page.close().catch(() => {});
     }
   }
-  await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, () => worker()));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
   console.log(`Parent Ratings supplement done: checked ${summary.checked}, supplemented ${summary.supplemented}, failed ${summary.failed}`);
   return summary;
 }
@@ -961,7 +1180,7 @@ async function sortByListingDateNewestFirst(page, keyword) {
   if (clicked.clicked) {
     console.log('Historical new-only mode: sorted by listing date before extraction');
     await new Promise(r => setTimeout(r, 3000));
-    const check = await extractPageData(page).catch(() => ({ data: [] }));
+    const check = await extractPageDataWithProfitRetry(page, keyword, 'listing-date-sort-check').catch(() => ({ data: [] }));
     const dates = check.data.map(item => normalizeListingDate(item.listingDate)).filter(Boolean).slice(0, 8);
     const verifiedDescending = dates.length < 2 || dates.every((date, index) => index === 0 || date <= dates[index - 1]);
     const summary = {
@@ -997,24 +1216,262 @@ async function waitForResultRows(page, timeout = 20000) {
 }
 
 async function clickConfirmQuery(page) {
-  await page.evaluate(() => {
-    const btns = document.querySelectorAll('button');
-    for (const btn of btns) {
-      const text = btn.innerText.trim();
-      if (text === '确认查询' || text === '纭鏌ヨ') { btn.click(); break; }
+  const result = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('button')];
+    const visible = buttons.filter(button => {
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      return rect.width > 0 && rect.height > 0 &&
+        style.display !== 'none' && style.visibility !== 'hidden';
+    });
+    const button = visible.find(candidate => {
+      const text = (candidate.innerText || '').trim().replace(/\s+/g, '');
+      return text === '确认查询' || text === '纭鏌ヨ';
+    });
+    if (!button) {
+      return {
+        clicked: false,
+        reason: 'visible-confirm-query-button-not-found',
+        visibleButtons: visible.map(candidate => (candidate.innerText || '').trim()).filter(Boolean).slice(0, 20)
+      };
     }
+    if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+      return {
+        clicked: false,
+        reason: 'confirm-query-button-disabled',
+        buttonText: (button.innerText || '').trim()
+      };
+    }
+    button.click();
+    return {
+      clicked: true,
+      buttonText: (button.innerText || '').trim()
+    };
+  });
+  if (!result.clicked) {
+    throw new Error(
+      `Confirm query was not clicked: ${result.reason}; ` +
+      `visible buttons: ${(result.visibleButtons || []).join(' | ')}`
+    );
+  }
+  console.log(`Confirm query clicked: ${result.buttonText}`);
+  return result;
+}
+
+async function readQueryResultState(page) {
+  return page.evaluate(() => {
+    const row = document.querySelector('.el-table__body-wrapper table tbody tr:first-child');
+    const firstAsin = row?.innerText?.match(/ASIN:\s*([A-Z0-9]{10})/)?.[1] || '';
+    const rowCount = document.querySelectorAll('.el-table__body-wrapper table tbody tr').length;
+    const loading = [...document.querySelectorAll('.el-loading-mask')].some(element => {
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    });
+    const pagerText = (document.querySelector('.el-pagination')?.innerText || '').trim().replace(/\s+/g, ' ');
+    const noData = /暂无数据|暂无结果|没有数据|No data|No results/i.test(document.body?.innerText || '');
+    const keywordInput = document.querySelector('input[placeholder*="支持ASIN"], input[placeholder*="ASIN"], input[placeholder*="鏀寔ASIN"]');
+    return {
+      firstAsin,
+      rowCount,
+      loading,
+      pagerText,
+      noData,
+      keywordValue: keywordInput?.value || ''
+    };
   });
 }
 
+async function setAndVerifyKeywordInput(page, keyword) {
+  const expected = String(keyword || '').trim();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const writeResult = await page.evaluate((value) => {
+      const inputs = [...document.querySelectorAll('input')].filter(input => {
+        const placeholder = input.getAttribute('placeholder') || '';
+        const rect = input.getBoundingClientRect();
+        const style = window.getComputedStyle(input);
+        return /ASIN/i.test(placeholder) && rect.width > 0 && rect.height > 0 &&
+          style.display !== 'none' && style.visibility !== 'hidden';
+      });
+      const input = inputs[0];
+      if (!input) {
+        return {
+          found: false,
+          placeholders: [...document.querySelectorAll('input')]
+            .map(element => element.getAttribute('placeholder') || '')
+            .filter(Boolean)
+            .slice(0, 20)
+        };
+      }
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+      if (!setter) return { found: true, written: false, reason: 'native-value-setter-missing' };
+      input.focus();
+      setter.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      setter.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new Event('blur', { bubbles: true }));
+      return { found: true, written: true, value: input.value };
+    }, expected);
+    await new Promise(resolve => setTimeout(resolve, 700));
+    const state = await readQueryResultState(page);
+    if (String(state.keywordValue || '').trim() === expected) {
+      if (attempt > 1) console.log(`Keyword input verified after retry ${attempt}: ${expected}`);
+      return { verified: true, attempts: attempt, value: state.keywordValue };
+    }
+    console.warn(
+      `Keyword input verification attempt ${attempt}/3 failed: expected "${expected}", ` +
+      `got "${state.keywordValue || ''}"${writeResult.found ? '' : '; input not found'}`
+    );
+    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 1200));
+  }
+  throw new Error(`Keyword input could not be verified before confirm query: expected "${expected}"`);
+}
+
+async function waitForConfirmedQueryRefresh(page, beforeState, expectedKeyword) {
+  const loadingObserved = await page.waitForFunction(() => {
+    return [...document.querySelectorAll('.el-loading-mask')].some(element => {
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    });
+  }, { timeout: 5000 }).then(() => true).catch(() => false);
+
+  await page.waitForFunction((before, observedLoading) => {
+    const row = document.querySelector('.el-table__body-wrapper table tbody tr:first-child');
+    const firstAsin = row?.innerText?.match(/ASIN:\s*([A-Z0-9]{10})/)?.[1] || '';
+    const rowCount = document.querySelectorAll('.el-table__body-wrapper table tbody tr').length;
+    const loading = [...document.querySelectorAll('.el-loading-mask')].some(element => {
+      const style = window.getComputedStyle(element);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    });
+    const pagerText = (document.querySelector('.el-pagination')?.innerText || '').trim().replace(/\s+/g, ' ');
+    const noData = /暂无数据|暂无结果|没有数据|No data|No results/i.test(document.body?.innerText || '');
+    const changed = firstAsin !== before.firstAsin || rowCount !== before.rowCount || pagerText !== before.pagerText;
+    return !loading && (firstAsin || noData) && (observedLoading || changed);
+  }, { timeout: 60000 }, beforeState, loadingObserved);
+
+  const afterState = await readQueryResultState(page);
+  if (String(afterState.keywordValue || '').trim() !== String(expectedKeyword || '').trim()) {
+    throw new Error(
+      `Confirmed query keyword mismatch: expected "${expectedKeyword}", got "${afterState.keywordValue || ''}"`
+    );
+  }
+  if (!loadingObserved &&
+      afterState.firstAsin === beforeState.firstAsin &&
+      afterState.rowCount === beforeState.rowCount &&
+      afterState.pagerText === beforeState.pagerText) {
+    throw new Error('Confirm query click did not produce an observable result refresh');
+  }
+  return { loadingObserved, before: beforeState, after: afterState };
+}
+
+async function verifyResultsPageSize(page, size = PAGE_SIZE) {
+  const status = await page.evaluate((targetSize) => {
+    const controls = [...document.querySelectorAll('.el-pagination__sizes')]
+      .filter(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+    const texts = controls.flatMap(element => [
+      (element.innerText || '').trim(),
+      ...[...element.querySelectorAll('input')].map(input => input.value || '')
+    ]).filter(Boolean);
+    return {
+      verified: texts.some(text => text.includes(String(targetSize))),
+      texts
+    };
+  }, size);
+  if (!status.verified) {
+    throw new Error(
+      `Page size changed after confirm query; expected ${size} rows/page, got: ${(status.texts || []).join(' | ')}`
+    );
+  }
+  return status;
+}
+
+async function setResultsPageSize(page, size = PAGE_SIZE) {
+  console.log(`Setting page size: ${size} rows/page`);
+  const opened = await page.evaluate((targetSize) => {
+    const containers = [...document.querySelectorAll('.el-pagination__sizes')]
+      .filter(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+    const container = containers[0];
+    if (!container) {
+      return { opened: false, reason: 'pagination-size-control-not-found' };
+    }
+    const currentText = [
+      (container.innerText || '').trim(),
+      ...[...container.querySelectorAll('input')].map(input => input.value || '')
+    ].filter(Boolean).join(' ');
+    if (currentText.includes(String(targetSize))) {
+      return { opened: true, alreadySelected: true, currentText };
+    }
+    const clickable = container.querySelector('.el-select, .el-input, input') || container;
+    clickable.click();
+    return { opened: true, alreadySelected: false, currentText };
+  }, size);
+
+  if (!opened.opened) {
+    throw new Error(`Page size control not found before query; expected to set ${size} rows/page`);
+  }
+
+  if (!opened.alreadySelected) {
+    await new Promise(r => setTimeout(r, 500));
+    const selected = await page.evaluate((targetSize) => {
+      const dropdowns = [...document.querySelectorAll('.el-select-dropdown')]
+        .filter(el => {
+          const text = (el.innerText || '').trim();
+          return text.includes('10条/页') && text.includes('20条/页') && text.includes('50条/页');
+        });
+      const options = dropdowns.flatMap(dropdown => [...dropdown.querySelectorAll('.el-select-dropdown__item')]);
+      const option = options.find(el => (el.innerText || '').trim().includes(`${targetSize}条/页`));
+      if (!option) {
+        return {
+          selected: false,
+          visibleOptions: options.map(el => (el.innerText || '').trim()).filter(Boolean)
+        };
+      }
+      option.click();
+      return { selected: true, optionText: (option.innerText || '').trim() };
+    }, size);
+    if (!selected.selected) {
+      throw new Error(`Page size option ${size} not found; visible options: ${(selected.visibleOptions || []).join(', ')}`);
+    }
+    await new Promise(r => setTimeout(r, 800));
+  }
+
+  const verified = await page.evaluate((targetSize) => {
+    const texts = [...document.querySelectorAll('.el-pagination__sizes')]
+      .flatMap(el => [
+        (el.innerText || '').trim(),
+        ...[...el.querySelectorAll('input')].map(input => input.value || '')
+      ])
+      .filter(Boolean);
+    return {
+      verified: texts.some(text => text.includes(String(targetSize))),
+      texts
+    };
+  }, size);
+
+  if (!verified.verified) {
+    throw new Error(`Page size was not applied; expected ${size}, got: ${(verified.texts || []).join(' | ')}`);
+  }
+  console.log(`Page size applied: ${size} rows/page`);
+  return { size, previousText: opened.currentText || '' };
+}
+
 async function setInputValue(page, elementHandle, value) {
-  await elementHandle.click({ clickCount: 3 });
-  await page.keyboard.press('Backspace');
-  await page.keyboard.type(String(value), { delay: 10 });
-  await elementHandle.evaluate(input => {
+  await elementHandle.evaluate((input, nextValue) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (setter) setter.call(input, String(nextValue));
+    else input.value = String(nextValue);
+    input.focus();
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.dispatchEvent(new Event('blur', { bubbles: true }));
-  });
+  }, value);
 }
 
 async function setBsrRange(page, min, max) {
@@ -1066,6 +1523,7 @@ async function extractKeyword(page, keyword) {
     timeFilter: timeFilterLabel || '近30天',
     historicalNewOnly,
     allowOverPageLimit,
+    pageSize: PAGE_SIZE,
     pagesAvailable: null,
     pagesFetched: 0,
     rowsExtracted: 0
@@ -1078,19 +1536,7 @@ async function extractKeyword(page, keyword) {
   await new Promise(r => setTimeout(r, 3000));
 
   // 1. Navigate to Oalur product search and prepare query filters.
-  await page.evaluate((kw) => {
-    const input = document.querySelector('input[placeholder*="鏀寔ASIN"], input[placeholder*="ASIN"]');
-    if (input) {
-      const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      s.call(input, '');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      s.call(input, kw);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      input.dispatchEvent(new Event('blur', { bubbles: true }));
-    }
-  }, keyword);
-  await new Promise(r => setTimeout(r, 500));
+  await setAndVerifyKeywordInput(page, keyword);
 
   // 2. Set BSR range.
   console.log(`Applying BSR range to page: ${minBsr}-${maxBsr}`);
@@ -1112,11 +1558,35 @@ async function extractKeyword(page, keyword) {
   }, timeToClick);
   await new Promise(r => setTimeout(r, 3000));
 
-  // 4. Click confirm/search when the query UI is ready.
-  await clickConfirmQuery(page);
-  await new Promise(r => setTimeout(r, 5000));
+  // 4. Set page size before query so each result page returns the intended number of rows.
+  keywordRun.pageSizeSelection = await setResultsPageSize(page, PAGE_SIZE);
 
-  await ensureVariantSkuEnabled(page);
+  // 5. Click confirm/search when the query UI is ready.
+  const beforeConfirmState = await readQueryResultState(page);
+  const confirmClick = await clickConfirmQuery(page);
+  const queryRefresh = await waitForConfirmedQueryRefresh(page, beforeConfirmState, keyword);
+  const pageSizeAfterConfirm = await verifyResultsPageSize(page, PAGE_SIZE);
+  keywordRun.queryConfirmation = {
+    clicked: confirmClick.clicked,
+    buttonText: confirmClick.buttonText,
+    loadingObserved: queryRefresh.loadingObserved,
+    before: queryRefresh.before,
+    after: queryRefresh.after,
+    pageSizeVerified: pageSizeAfterConfirm.verified,
+    pageSizeTexts: pageSizeAfterConfirm.texts
+  };
+  logger.info('market.query_confirmed', { keyword, ...keywordRun.queryConfirmation });
+
+  const variantAvailable = await ensureVariantSkuEnabled(page);
+  if (!variantAvailable) {
+    keywordRun.pagesAvailable = 0;
+    keywordRun.pagesFetched = 0;
+    keywordRun.rowsExtracted = 0;
+    keywordRun.pagination = { stopReason: 'historical-no-matching-rows', pagesPlanned: 0, pagesFetched: 0 };
+    keywordRun.completedAt = new Date().toISOString();
+    logger.info('market.keyword_complete', { keyword, rowsExtracted: 0, pagesFetched: 0, pagesAvailable: 0, historicalNoRows: true });
+    return [];
+  }
   // 缁涘绶熺悰銊︾壐閸掗攱鏌婇敍鍫⑩€樻穱?ASIN 閸欘垱褰侀崣鏍电礆
   for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 1000));
@@ -1131,13 +1601,43 @@ async function extractKeyword(page, keyword) {
   if (!(await isVariantSkuChecked(page))) throw new Error('绗竴椤垫姄鍙栧墠鈥滄煡鐪嬪叾浠栧彉浣撯€濅笉鏄嬀閫夌姸鎬侊紝鍋滄鎵ц');
   keywordRun.listingDateSort = await sortByListingDateNewestFirst(page, keyword);
   await ensureVariantSkuEnabled(page);
-  let result = await extractPageData(page);
+  let result;
+  let confirmedMetrics;
+  let firstPageValidationError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    result = await extractPageDataWithProfitRetry(page, keyword, `page 1 confirmation attempt ${attempt}`);
+    try {
+      confirmedMetrics = confirmedFirstPageMetrics(result, PAGE_SIZE);
+      firstPageValidationError = null;
+      break;
+    } catch (error) {
+      firstPageValidationError = error;
+      if (attempt === 3) break;
+      console.warn(
+        `Confirmed first-page metrics are not ready (attempt ${attempt}/3): ${error.message}. ` +
+        'Waiting for Oalur totals to finish loading before retrying.'
+      );
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      if (attempt === 2) {
+        await setAndVerifyKeywordInput(page, keyword);
+        const beforeRetryConfirm = await readQueryResultState(page);
+        await clickConfirmQuery(page);
+        await waitForConfirmedQueryRefresh(page, beforeRetryConfirm, keyword);
+        await verifyResultsPageSize(page, PAGE_SIZE);
+        await ensureVariantSkuEnabled(page);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+  }
+  if (firstPageValidationError) throw firstPageValidationError;
   let allData = filterHistoricalNewCandidates(result.data);
   keywordRun.firstPage = {
     rawRows: result.data.length,
     keptRows: allData.length,
     total: result.total,
-    lastPage: result.lastPage
+    totalText: result.totalText,
+    lastPage: result.lastPage,
+    confirmedMetrics
   };
   keywordRun.pagesAvailable = result.lastPage;
   keywordRun.pagesFetched = 1;
@@ -1148,7 +1648,7 @@ async function extractKeyword(page, keyword) {
   });
   if (!historicalNewOnly) {
     const estimatedRows = estimateRowsFromFirstPage(result);
-    if (estimatedRows > HARD_SKIP_ROWS) {
+    if (estimatedRows > HARD_SKIP_ROWS && !allowOverPageLimit) {
       const details = {
         keyword,
         estimatedRows,
@@ -1169,19 +1669,19 @@ async function extractKeyword(page, keyword) {
   if (!historicalNewOnly && result.lastPage > MAX_PAGES && !allowOverPageLimit) {
     const estimatedRows = estimateRowsFromFirstPage(result);
     keywordRun.pageLimitExceeded = true;
-    keywordRun.pageLimitAction = 'stop_before_over_400';
+    keywordRun.pageLimitAction = 'stop_before_over_800';
     logger.warn('market.page_limit_exceeded', {
       keyword,
       lastPage: result.lastPage,
       estimatedRows,
       maxPages: MAX_PAGES,
-      maxRows: MAX_PAGES * 20,
-      continueAfter400: false,
-      rerunWith: '--allow-over-400'
+      maxRows: MAX_PAGES * PAGE_SIZE,
+      continueAfter800: false,
+      rerunWith: '--allow-over-800'
     });
     throw new Error(
-      `Oalur result has ${result.lastPage} pages, estimated ${estimatedRows} rows, exceeding current limit ${MAX_PAGES} pages / ${MAX_PAGES * 20} rows. ` +
-      `Stop here and ask user whether to continue. If confirmed, rerun with --allow-over-400.`
+      `Oalur result has ${result.lastPage} pages, estimated ${estimatedRows} rows, exceeding current limit ${MAX_PAGES} pages / ${MAX_PAGES * PAGE_SIZE} rows. ` +
+      `Stop here and ask user whether to continue. If confirmed, rerun with --allow-over-800.`
     );
   }
 
@@ -1196,13 +1696,13 @@ async function extractKeyword(page, keyword) {
     logger.info('market.pagination_plan', { keyword, ...keywordRun.pagination });
   } else if (result.lastPage > 1) {
     const actualLastPage = allowOverPageLimit ? result.lastPage : Math.min(result.lastPage, MAX_PAGES);
-    console.log(`  extracting up to ${actualLastPage} pages, about ${actualLastPage * 20} rows`);
+    console.log(`  extracting up to ${actualLastPage} pages, about ${actualLastPage * PAGE_SIZE} rows`);
     keywordRun.pagination = {
       pagesAvailable: result.lastPage,
       pagesPlanned: actualLastPage,
       maxPages: MAX_PAGES,
       exceededDefaultLimit: result.lastPage > MAX_PAGES,
-      continueAfter400: result.lastPage > MAX_PAGES && allowOverPageLimit
+      continueAfter800: result.lastPage > MAX_PAGES && allowOverPageLimit
     };
     logger.info('market.pagination_plan', { keyword, ...keywordRun.pagination });
     const prevPageAsins = new Set(allData.map(d => d.asin));
@@ -1220,7 +1720,7 @@ async function extractKeyword(page, keyword) {
       let changed = false;
       for (let wait = 0; wait < 10; wait++) {
         await new Promise(r => setTimeout(r, 1000));
-        const check = await extractPageData(page);
+        const check = await extractPageDataWithProfitRetry(page, keyword, `page ${p}`);
         if (check.data.length === 0) continue;
         const hasNewAsins = check.data.some(d => d.asin && !prevPageAsins.has(d.asin));
         if (hasNewAsins) {
@@ -1266,7 +1766,16 @@ async function extractKeyword(page, keyword) {
 (async () => {
   if (keywordIntentAnalysisPromise) await keywordIntentAnalysisPromise;
   const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null, protocolTimeout: 600000 });
-  const page = await browser.newPage();
+  const existingPages = await browser.pages();
+  let page = null;
+  for (const candidate of existingPages) {
+    if (candidate.url().startsWith(OALUR_FILTER_URL) && await hasBsrFilterReady(candidate)) {
+      page = candidate;
+      console.log('Reusing an already-hydrated Oalur filter tab.');
+      break;
+    }
+  }
+  if (!page) page = await browser.newPage();
   await gotoOalurFilter(page, 'initial page');
   await activatePage(page);
   console.log('閴?瀹歌尪绻涢幒?Edge');
@@ -1322,29 +1831,52 @@ async function extractKeyword(page, keyword) {
     allRawData = filterHistoricalNewCandidates(allRawData);
     console.log(`Historical new-only mode after listing date supplement: ${allRawData.length}/${beforeDateFiltered} rows remain`);
   }
+  const canonicalRawVariantRows = dedupeCanonicalVariantRows(allRawData);
   const categorySelectionSource = allRawData.flatMap(item => {
     const categories = Array.isArray(item.categories) && item.categories.length ? item.categories : [item.category].filter(Boolean);
     return categories.length ? categories.map(category => ({ ...item, category })) : [item];
   });
   const initialCategorySelectionResult = selectTargetCategories(categorySelectionSource, keywords, { referenceCategories });
-  const targetCategoryCodexReview = loadTargetCategoryCodexReview(outFile, {});
+  const sharedTargetReviewFile = historicalNewOnly
+    ? sharedTargetCategoryReviewFileForHistoricalData(outFile)
+    : null;
+  if (historicalNewOnly && (!sharedTargetReviewFile || !fs.existsSync(sharedTargetReviewFile))) {
+    throw new Error('Historical new-only extraction requires the current-market target-category Codex review request file. Run the current-market raw extraction first, or pass --target-category-review-file.');
+  }
+  const targetCategoryReviewMarketData = sharedTargetReviewFile
+    ? { targetCategoryCodexReviewFile: sharedTargetReviewFile }
+    : {};
+  const targetCategoryCodexReview = loadTargetCategoryCodexReview(outFile, targetCategoryReviewMarketData);
   const targetCategoryCodexApplication = applyTargetCategoryCodexReview(initialCategorySelectionResult, targetCategoryCodexReview.review);
   const categorySelectionResult = targetCategoryCodexApplication.categorySelectionResult;
   const targetCategory = categorySelectionResult.targetCategory;
   const targetCategories = categorySelectionResult.targetCategories;
-  const targetCategoryCodexReviewRequest = buildTargetCategoryCodexReviewRequest({
+  const generatedTargetCategoryCodexReviewRequest = buildTargetCategoryCodexReviewRequest({
     keywords,
+    inputProductContext,
     categorySelection: categorySelectionResult.categorySelection,
     targetCategories,
     referenceCategories,
     items: categorySelectionSource
   });
-  const targetCategoryCodexReviewWrite = writeTargetCategoryCodexReviewRequest(
-    outFile,
-    targetCategoryCodexReviewRequest,
-    targetCategoryCodexReview.review,
-    targetCategoryCodexReview.reviewFile
-  );
+  const targetCategoryCodexReviewRequest = sharedTargetReviewFile
+    ? requestFromExistingTargetCategoryReview(
+      targetCategoryCodexReview.review,
+      generatedTargetCategoryCodexReviewRequest
+    )
+    : generatedTargetCategoryCodexReviewRequest;
+  const targetCategoryCodexReviewWrite = sharedTargetReviewFile
+    ? {
+      reviewFile: targetCategoryCodexReview.reviewFile,
+      written: false,
+      reason: 'historical-new-only reuses current-market category review'
+    }
+    : writeTargetCategoryCodexReviewRequest(
+      outFile,
+      targetCategoryCodexReviewRequest,
+      targetCategoryCodexReview.review,
+      targetCategoryCodexReview.reviewFile
+    );
   const referenceCategorySelection = buildReferenceCategorySelectionSummary(
     referenceCategories,
     categorySelectionResult.categorySelection
@@ -1406,24 +1938,56 @@ async function extractKeyword(page, keyword) {
     if (listingMatchesFilter(item)) matched.push(item);
     else notMatched.push(item);
   });
-  const filtered = matched;
-  const excluded = notMatched;
+  const salesFloorFilter = applySalesFloorFilter(matched, { salesFloorMin });
+  const filtered = salesFloorFilter.included;
+  const excluded = [...notMatched, ...salesFloorFilter.excluded];
   const codexSemanticReviewCandidates = buildCodexSemanticReviewCandidates({
     keywords,
+    inputProductContext,
     categorySelection: categorySelectionResult.categorySelection,
     targetCategories,
     items: allRawData,
     referenceCategories
   });
+  const codexSemanticReviewWrite = writeCodexSemanticReviewRequest(
+    outFile,
+    codexSemanticReviewCandidates,
+    codexSemanticReview.review,
+    codexSemanticReview.reviewFile
+  );
   if (!historicalNewOnly) {
     listingDateSupplementSummary = await supplementMissingListingDates(browser, filtered);
   }
   ratingsSupplementSummary = await supplementZeroParentRatings(browser, filtered);
   console.log(`\nTarget categories: ${targetCategories.join(' | ')}`);
+  if (salesFloorFilter.summary.count > 0) {
+    console.log(`Sales floor: excluded ${salesFloorFilter.summary.count} target-matched listings below ${salesFloorMin} monthly sales`);
+    logger.warn('sales_floor.excluded', salesFloorFilter.summary);
+  } else {
+    logger.info('sales_floor.excluded', salesFloorFilter.summary);
+  }
   console.log(`Filtered: ${allRawData.length} -> ${filtered.length}, excluded ${excluded.length}`);
 
   const missingDataSummary = summarizeDataQuality(filtered);
   const allParentDataSummary = summarizeDataQuality(allRawData);
+  const profitCoverage = {
+    filtered: profitColumnCoverage(filtered),
+    allParents: profitColumnCoverage(allRawData)
+  };
+  if (profitCoverage.filtered.total > 0 && profitCoverage.filtered.marginRows === 0) {
+    logger.warn('market.profit_columns_missing_final', {
+      keyword: keywords.join(' + '),
+      filteredCoverage: profitCoverage.filtered,
+      allParentCoverage: profitCoverage.allParents,
+      message: 'Oalur profit columns remained empty after retry; profit quick-screen should be treated as missing.'
+    });
+  } else {
+    logger.info('market.profit_columns_final', {
+      keyword: keywords.join(' + '),
+      filteredCoverage: profitCoverage.filtered,
+      allParentCoverage: profitCoverage.allParents
+    });
+  }
   const marketRunSummary = {
     logFile: path.relative(process.cwd(), logger.logFile),
     outputFile: path.relative(process.cwd(), outFile),
@@ -1436,9 +2000,12 @@ async function extractKeyword(page, keyword) {
     rawRowsAfterAsinDedupeAndParentAggregation: allRawData.length,
     filteredProductCount: filtered.length,
     excludedProductCount: excluded.length,
+    salesFloorExcludedCount: salesFloorFilter.summary.count,
+    salesFloorExcludedSummary: salesFloorFilter.summary,
     minMonthlySales: missingDataSummary.minMonthlySales,
     missingDataSummary,
     allParentDataSummary,
+    profitColumnCoverage: profitCoverage,
     supplementSummary: {
       category: categorySupplementSummary,
       listingDate: listingDateSupplementSummary,
@@ -1446,6 +2013,7 @@ async function extractKeyword(page, keyword) {
     },
     targetCategories,
     equivalentCandidateCategories: [...equivalentCategorySet],
+    inputProductContext,
     targetCategoryCodexReviewFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReview.reviewFile),
     targetCategoryCodexReviewLoaded: targetCategoryCodexApplication.decisionCount > 0,
     targetCategoryCodexReviewApplied: Boolean(targetCategoryCodexApplication.applied),
@@ -1460,7 +2028,8 @@ async function extractKeyword(page, keyword) {
     targetCategoryCodexReviewRequestFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReviewWrite.reviewFile),
     targetCategoryCodexReviewRequestWritten: Boolean(targetCategoryCodexReviewWrite.written),
     codexSemanticReviewFile: path.relative(path.dirname(path.resolve(outFile)), codexSemanticReview.reviewFile),
-    codexSemanticReviewLoaded: Boolean(codexSemanticReview.review),
+    codexSemanticReviewLoaded: Boolean(codexSemanticReview.reviewLoaded),
+    codexSemanticReviewRequestWritten: Boolean(codexSemanticReviewWrite.written),
     codexSemanticReviewStandard: REVIEW_STANDARD,
     codexSemanticReviewCandidates,
     generatedAt: new Date().toISOString()
@@ -1479,13 +2048,20 @@ async function extractKeyword(page, keyword) {
     rawTotal: allRawData.length,
     total: allRawData.length,
     allCount: allRawData.length,
+    canonicalRawVariantRowsVersion: 1,
+    canonicalRawVariantRowCount: canonicalRawVariantRows.length,
+    canonicalRawVariantRows,
     filteredCount: filtered.length,
     excludedCount: excluded.length,
     targetMatchedCount: matched.length,
-    salesFloorExcludedCount: 0,
+    analysisSalesFloor: salesFloorMin,
+    salesFloorExcludedCount: salesFloorFilter.summary.count,
+    salesFloorExcludedSummary: salesFloorFilter.summary,
+    profitColumnCoverage: profitCoverage,
     targetCategory,
     targetCategories,
     equivalentCandidateCategories: [...equivalentCategorySet],
+    inputProductContext,
     referenceCategories,
     referenceCategorySelection,
     targetCategoryCodexReviewFile: path.relative(path.dirname(path.resolve(outFile)), targetCategoryCodexReview.reviewFile),
@@ -1503,7 +2079,8 @@ async function extractKeyword(page, keyword) {
     targetCategoryCodexReviewRequestWritten: Boolean(targetCategoryCodexReviewWrite.written),
     targetCategoryCodexReviewRequest,
     codexSemanticReviewFile: path.relative(path.dirname(path.resolve(outFile)), codexSemanticReview.reviewFile),
-    codexSemanticReviewLoaded: Boolean(codexSemanticReview.review),
+    codexSemanticReviewLoaded: Boolean(codexSemanticReview.reviewLoaded),
+    codexSemanticReviewRequestWritten: Boolean(codexSemanticReviewWrite.written),
     codexSemanticReviewStandard: REVIEW_STANDARD,
     codexSemanticReviewCandidates,
     rescuePriceGuard,

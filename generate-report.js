@@ -1,8 +1,9 @@
 ﻿const fs = require('fs');
 const path = require('path');
 const { parsePeriod, selectSurvivalBaselinePeriod } = require('./survival-baseline');
-const { aggregateRatingsForParent, aggregateVariantMetrics } = require('./parent-listing-aggregate');
+const { refreshParentAggregatedMetrics } = require('./parent-listing-aggregate');
 const { createRunLogger } = require('./run-log');
+const { codexReviewStatus } = require('./codex-review-workflow');
 
 function safeSegment(value) {
   return String(value || 'output').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-');
@@ -336,70 +337,12 @@ function productTitle(d) {
   return d?.title || d?.productTitle || d?.productName || d?.name || d?.itemName || d?.asin || '无标题';
 }
 
-function parseMetricNumber(value) {
-  const n = Number(String(value || '').replace(/[^\d.-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function formatMetricInteger(value) {
-  return Math.round(value || 0).toLocaleString('en-US');
-}
-
-function formatMetricMoney(value) {
-  return '$' + Number(value || 0).toLocaleString('en-US', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1
-  });
-}
-
-function representativeMetricRowForReport(item, rows) {
-  const sourceRows = Array.isArray(rows) && rows.length ? rows : [];
-  return sourceRows.find(row => row.asin && row.asin === item.asin)
-    || [...sourceRows].sort((a, b) => {
-      const ab = parseMetricNumber(a.bsr) > 0 ? parseMetricNumber(a.bsr) : Number.MAX_SAFE_INTEGER;
-      const bb = parseMetricNumber(b.bsr) > 0 ? parseMetricNumber(b.bsr) : Number.MAX_SAFE_INTEGER;
-      return ab - bb;
-    })[0]
-    || item;
-}
-
-function refreshParentAggregatedMetricsForReport(items) {
-  return (items || []).map(item => {
-    const rows = Array.isArray(item.variantRows) && item.variantRows.length ? item.variantRows : [];
-    if (!rows.length) return item;
-    const metricRows = rows;
-    const aggregated = aggregateVariantMetrics({ ...item }, metricRows);
-    const ratingsAggregation = aggregateRatingsForParent(metricRows);
-    const supplementedRatings = parseMetricNumber(item.ratingsNumAggregated || item.ratings);
-    const useSupplementedRatings = ratingsAggregation.value <= 0
-      && supplementedRatings > 0
-      && String(item.ratingsSupplementedFrom || '').includes('products/information');
-    const ratingsValue = useSupplementedRatings ? supplementedRatings : ratingsAggregation.value;
-    return {
-      ...item,
-      sales: aggregated.sales,
-      revenue: aggregated.revenue,
-      ratings: formatMetricInteger(ratingsValue),
-      salesNumAggregated: aggregated.salesNumAggregated,
-      revenueNumAggregated: aggregated.revenueNumAggregated,
-      ratingsNumAggregated: Math.round(ratingsValue),
-      aggregatedMetricAsins: [...new Set(metricRows.map(row => row.asin).filter(Boolean))],
-      aggregatedMetricRowCount: metricRows.length,
-      salesRevenueMetricSource: aggregated.salesRevenueMetricSource,
-      salesMetricFallbackReason: aggregated.salesMetricFallbackReason,
-      revenueMetricFallbackReason: aggregated.revenueMetricFallbackReason,
-      ratingsMetricSource: useSupplementedRatings ? item.ratingsMetricSource : ratingsAggregation.mode,
-      ratingsMetricReason: useSupplementedRatings ? item.ratingsMetricReason : ratingsAggregation.reason,
-      ratingsMetricValues: useSupplementedRatings ? item.ratingsMetricValues : ratingsAggregation.values
-    };
-  });
-}
-
 // 璇诲彇鏁版嵁鏂囦欢锛堟敮鎸佺粷瀵硅矾寰勬垨鐩稿褰撳墠宸ョ▼ output 鐩綍鐨勮矾寰勶級
 const dataFile = process.argv[2];
 if (!dataFile) { console.error('Usage: node generate-report.js <data.json> [--seasonality <seasonality.json>] [--historical <historical.json>] [--asin-lifecycle <asin-lifecycle.json>]'); process.exit(1); }
 const resolvedDataPath = path.isAbsolute(dataFile) ? dataFile : path.join(process.cwd(), dataFile);
 const jsonData = JSON.parse(fs.readFileSync(resolvedDataPath, 'utf-8'));
+const liveCodexReviewStatus = codexReviewStatus(resolvedDataPath);
 const logger = createRunLogger({
   outputFile: resolvedDataPath,
   keyword: jsonData.keyword || jsonData.keywords?.join(' + ') || 'report',
@@ -483,15 +426,18 @@ const categorySelectionRows = Array.isArray(jsonData.categorySelection) ? jsonDa
 const selectedCategoryRows = categorySelectionRows.filter(row => targetCategorySetForDisplay.has(row.category));
 const qualifiedCategoryRows = categorySelectionRows.filter(categoryMeetsTargetThreshold);
 const fallbackTargetRows = selectedCategoryRows.filter(row => !categoryMeetsTargetThreshold(row));
+const hasNoTargetCategories = targetCategorySetForDisplay.size === 0;
 const referenceCategorySelectionSuffix = referenceCategoriesForDisplay.length
   ? ` 参考类目先进入目标类目 Codex 判断；未被判 target 的参考命中类目才进入产品级 Codex listing 救回复核（${referenceCategoryMatchSummary}）。`
   : ' 未使用参考类目。';
-const targetCategorySelectionNote = targetCategorySelectionMode === 'codex-final'
+const targetCategorySelectionNote = hasNoTargetCategories
+  ? `<span style="color:#ad4e00;font-weight:600;">暂无达到最低相关性门槛的目标类目，市场池保持为空并进入待 Codex 复核状态；不会自动选择最高分类目。</span> 最高分类目：${escapeHtml(categorySelectionRows[0]?.category || '未知')}（${Number(categorySelectionRows[0]?.score || 0).toFixed(1)}分）；目标门槛：相关分≥110且父体数≥3（或相关分≥180）、无上下文冲突、无叶子类目修饰词缺失；或形态命中、无上下文冲突、父体数≥20、标题强匹配≥50%。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`
+  : targetCategorySelectionMode === 'codex-final'
   ? `${referenceCategoriesForDisplay.length ? `输入参考类目已参与目标类目 Codex 判断（${referenceCategoryMatchSummary}）；未被判 target 的参考命中类目才作为产品级 listing 救回复核来源；` : ''}目标类目以本地 Codex 对“关键词核心产品是否属于 Amazon 类目”的判断为最终裁决；规则评分和标题样例只作为证据层。${targetCategoryCodexReviewSummary}`
   : referenceCategoriesForDisplay.length
   ? `输入参考类目会先参与目标类目 Codex 判断，不直接跳过类目判断；只有未被判 target 的参考命中类目才进入产品级 Codex listing 救回复核。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`
   : fallbackTargetRows.length
-  ? `<span style="color:#ad4e00;font-weight:600;">未发现达到目标类目门槛的类目，当前目标类目为兜底选择，请重点复核过滤结果。</span> 最高分类目：${escapeHtml(categorySelectionRows[0]?.category || '未知')}（${Number(categorySelectionRows[0]?.score || 0).toFixed(1)}分）；目标门槛：相关分≥110且父体数≥3（或相关分≥180）、无上下文冲突、无叶子类目修饰词缺失；或形态命中、无上下文冲突、父体数≥20、标题强匹配≥50%。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`
+  ? `<span style="color:#ad4e00;font-weight:600;">当前目标类目来自已加载的 Codex 明确 target 决策；规则分未达到门槛只说明需要复核，不是自动兜底选择。</span> 最高分类目：${escapeHtml(categorySelectionRows[0]?.category || '未知')}（${Number(categorySelectionRows[0]?.score || 0).toFixed(1)}分）；目标门槛：相关分≥110且父体数≥3（或相关分≥180）、无上下文冲突、无叶子类目修饰词缺失；或形态命中、无上下文冲突、父体数≥20、标题强匹配≥50%。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`
   : `已按目标类目门槛选中：${qualifiedCategoryRows.length || selectedCategoryRows.length} 个达标类目。目标门槛：相关分≥110且父体数≥3（或相关分≥180）、无上下文冲突、无叶子类目修饰词缺失；或形态命中、无上下文冲突、父体数≥20、标题强匹配≥50%。${referenceCategorySelectionSuffix}${targetCategoryCodexReviewSummary}`;
 const metricTargetCategories = Array.isArray(jsonData.targetCategories) && jsonData.targetCategories.length
   ? jsonData.targetCategories
@@ -511,27 +457,43 @@ function itemHasAnyTargetCategory(item, targetSet) {
     return rowCategories.some(category => targetSet.has(category));
   });
 }
-function itemCategoriesForMarketScope(item) {
-  return [
+function itemCategoriesForHistoricalScope(item, targetSet) {
+  const explicitlyMatched = Array.isArray(item?.targetMatchedCategories)
+    ? item.targetMatchedCategories.filter(Boolean)
+    : [];
+  if (explicitlyMatched.length) return explicitlyMatched;
+
+  const directCategories = [
     item?.category,
-    ...(Array.isArray(item?.categories) ? item.categories : []),
-    ...(Array.isArray(item?.targetMatchedCategories) ? item.targetMatchedCategories : []),
-    ...(Array.isArray(item?.variantRows) ? item.variantRows.flatMap(row => [
-      row?.category,
-      ...(Array.isArray(row?.categories) ? row.categories : [])
-    ]) : [])
+    ...(Array.isArray(item?.categories) ? item.categories : [])
   ].filter(Boolean);
+  const directTargetCategories = directCategories.filter(category => targetSet.has(category));
+  if (directTargetCategories.length) return directTargetCategories;
+
+  return (Array.isArray(item?.variantRows) ? item.variantRows : [])
+    .flatMap(row => [row?.category, ...(Array.isArray(row?.categories) ? row.categories : [])])
+    .filter(category => targetSet.has(category));
 }
-function effectiveMarketCategorySet(items = [], fallbackCategories = []) {
-  const categories = items.flatMap(itemCategoriesForMarketScope).filter(Boolean);
+function effectiveHistoricalMarketCategorySet(items = [], fallbackCategories = []) {
+  const fallbackSet = new Set(fallbackCategories.filter(Boolean));
+  const categories = items
+    .flatMap(item => itemCategoriesForHistoricalScope(item, fallbackSet))
+    .filter(Boolean);
   return new Set(categories.length ? categories : fallbackCategories.filter(Boolean));
 }
-jsonData.data = refreshParentAggregatedMetricsForReport(jsonData.data || []);
-jsonData.excluded = refreshParentAggregatedMetricsForReport(jsonData.excluded || []);
+jsonData.data = refreshParentAggregatedMetrics(jsonData.data || []);
+jsonData.excluded = refreshParentAggregatedMetrics(jsonData.excluded || []);
 
 // 鍙€夌殑瀛ｈ妭鎬т笌鐢熷懡鍛ㄦ湡鍒嗘瀽鏁版嵁
 const seasonalityIdx = process.argv.indexOf('--seasonality');
-const seasonalityFile = seasonalityIdx > -1 ? process.argv[seasonalityIdx + 1] : null;
+let seasonalityFile = seasonalityIdx > -1 ? process.argv[seasonalityIdx + 1] : null;
+if (!seasonalityFile) {
+  const dataDir = path.dirname(resolvedDataPath);
+  const autoFile = fs.existsSync(dataDir)
+    ? fs.readdirSync(dataDir).find(file => /-seasonality\.json$/i.test(file))
+    : null;
+  if (autoFile) seasonalityFile = path.join(dataDir, autoFile);
+}
 let seasonalityData = null;
 if (seasonalityFile && fs.existsSync(seasonalityFile)) {
   seasonalityData = JSON.parse(fs.readFileSync(seasonalityFile, 'utf-8'));
@@ -554,7 +516,7 @@ let survivalBaselineInfo = selectSurvivalBaselinePeriod(new Date());
 let historicalPeriodCheck = null;
 if (historicalFile && fs.existsSync(historicalFile)) {
   historicalData = JSON.parse(fs.readFileSync(historicalFile, 'utf-8'));
-  const marketScopeSet = effectiveMarketCategorySet(jsonData.data || [], jsonData.targetCategories || []);
+  const marketScopeSet = effectiveHistoricalMarketCategorySet(jsonData.data || [], jsonData.targetCategories || []);
   if (marketScopeSet.size) {
     const histAll = [...(historicalData.data || []), ...(historicalData.excluded || [])];
     historicalData.data = histAll.filter(item => itemHasAnyTargetCategory(item, marketScopeSet));
@@ -565,8 +527,8 @@ if (historicalFile && fs.existsSync(historicalFile)) {
     historicalData.targetCategories = jsonData.targetCategories;
     historicalData.marketScopeCategories = [...marketScopeSet];
   }
-  historicalData.data = refreshParentAggregatedMetricsForReport(historicalData.data || []);
-  historicalData.excluded = refreshParentAggregatedMetricsForReport(historicalData.excluded || []);
+  historicalData.data = refreshParentAggregatedMetrics(historicalData.data || []);
+  historicalData.excluded = refreshParentAggregatedMetrics(historicalData.excluded || []);
   console.log('已加载历史数据:', historicalFile, '| 时间:', historicalData.timeFilter);
   const histPeriod = parsePeriod(historicalData.timeFilter || '');
   const histYm = histPeriod ? `${histPeriod.year}-${String(histPeriod.month).padStart(2, '0')}` : '';
@@ -644,10 +606,10 @@ function classifyCpcRatioForReport(ratioPct) {
     return { grade: '未分析', conclusion: 'CPC 或客单价缺失' };
   }
   if (ratioPct < 5) return { grade: '健康', conclusion: 'CPC/客单价低于 5%，广告点击成本相对客单价压力较低' };
-  if (ratioPct < 8) return { grade: '可接受', conclusion: 'CPC/客单价处于 5%-8%，广告成本可接受，但仍需利润空间承接' };
+  if (ratioPct < 8) return { grade: '可接受', conclusion: 'CPC/客单价处于 5%-8%，点击成本压力可接受，但仍需利润空间承接' };
   if (ratioPct < 12) return { grade: '偏高', conclusion: 'CPC/客单价处于 8%-12%，需要强利润或强转化支撑' };
   if (ratioPct < 15) return { grade: '高风险', conclusion: 'CPC/客单价处于 12%-15%，新品冷启动广告压力高' };
-  return { grade: '很高风险', conclusion: 'CPC/客单价达到 15% 以上，广告成本风险很高' };
+  return { grade: '很高风险', conclusion: 'CPC/客单价达到 15% 以上，点击成本压力很高' };
 }
 
 function averageNumber(values) {
@@ -729,12 +691,51 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
   const targetSet = new Set(Array.isArray(jsonData.targetCategories) ? jsonData.targetCategories : [jsonData.targetCategory].filter(Boolean));
   const rescueSet = new Set(Array.isArray(jsonData.equivalentCandidateCategories) ? jsonData.equivalentCandidateCategories : []);
   const selectionByCategory = new Map((jsonData.categorySelection || []).map(row => [row.category, row]));
-  const countByCategory = new Map();
+  const exclusionSource = item => {
+    if (item.salesFloorExcluded) return 'sales_floor';
+    if (item.codexSemanticReviewExcluded) return 'product_codex_exclude';
+    if (item.keywordIntentRescueRejected) return 'legacy_price_guard';
+    if (item.targetCategoryTitleIntentRejected) return 'js_title_intent_reject';
+    return 'non_target_default_exclude';
+  };
+  const sourceLabels = {
+    sales_floor: '销量底线排除',
+    product_codex_exclude: '产品级 Codex 明确排除',
+    legacy_price_guard: '旧标题意图价格保护排除',
+    js_title_intent_reject: 'JS 标题意图硬过滤',
+    non_target_default_exclude: '非目标类目默认排除'
+  };
+  const sourceDescriptions = {
+    sales_floor: `目标类目直入或产品级 Codex 救回后，月销量低于 ${salesFloorMinTarget.toLocaleString()}，移出最终市场分析池。`,
+    product_codex_exclude: '非目标类目 listing 满足救回候选条件后，由产品级 Codex 判断不是同一核心产品/功能，明确排除。',
+    legacy_price_guard: '旧标题意图救回链路中的价格保护排除，保留作历史兼容标记。',
+    js_title_intent_reject: 'JS 标题意图硬过滤排除，属于规则层过滤，不等同于 Codex 语义判断。',
+    non_target_default_exclude: '不属于最终目标类目，也没有被产品级 Codex 明确救回；这是默认排除，不等同于产品级 Codex 排除。'
+  };
+  const countBySource = new Map();
+  const countBySourceCategory = new Map();
   for (const item of excludedItems) {
+    const source = exclusionSource(item);
+    countBySource.set(source, (countBySource.get(source) || 0) + 1);
     const category = item.category || '未识别';
-    countByCategory.set(category, (countByCategory.get(category) || 0) + 1);
+    const key = `${source}\u0000${category}`;
+    countBySourceCategory.set(key, {
+      source,
+      category,
+      count: (countBySourceCategory.get(key)?.count || 0) + 1
+    });
   }
-  const rows = [...countByCategory.entries()].map(([category, count]) => {
+  const sourceOrder = ['sales_floor', 'product_codex_exclude', 'non_target_default_exclude', 'js_title_intent_reject', 'legacy_price_guard'];
+  const sourceRows = sourceOrder
+    .map(source => ({
+      source,
+      label: sourceLabels[source],
+      count: countBySource.get(source) || 0,
+      share: excludedCount ? (countBySource.get(source) || 0) / excludedCount : 0,
+      description: sourceDescriptions[source]
+    }))
+    .filter(row => row.count > 0);
+  const rows = [...countBySourceCategory.values()].map(({ source, category, count }) => {
     const selection = selectionByCategory.get(category) || {};
     const score = Number(selection.score);
     const baseScore = Number(selection.baseScore);
@@ -748,8 +749,11 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
     if (selection.referenceCategoryMatch) flags.push('参考类目命中但未入选');
     if (selection.highShareTitleRescueCandidate) flags.push('待 Codex 语义复核');
     if (rescueSet.has(category)) flags.push('自动候选，需 Codex 复核后救回');
-    if (targetSet.has(category)) flags.push('目标类目内被排除');
+    if (targetSet.has(category) && source === 'sales_floor') flags.push('目标类目低销量硬过滤');
+    if (source === 'product_codex_exclude') flags.push('产品级 Codex 明确排除');
+    if (source === 'non_target_default_exclude') flags.push('默认排除，非 Codex 排除');
     return {
+      source,
       category,
       count,
       share,
@@ -761,11 +765,12 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
       flags
     };
   });
-  const targetCategoryExcludedRows = rows
-    .filter(row => row.isTargetCategory)
-    .sort((a, b) => b.count - a.count);
-  const importantRows = rows
-    .filter(row => !row.isTargetCategory)
+  const codexRows = rows
+    .filter(row => row.source === 'product_codex_exclude')
+    .sort((a, b) => b.count - a.count || (b.score ?? -999) - (a.score ?? -999))
+    .slice(0, 12);
+  const defaultRows = rows
+    .filter(row => row.source === 'non_target_default_exclude' || row.source === 'js_title_intent_reject' || row.source === 'legacy_price_guard')
     .filter(row => row.share >= 0.05 || (row.score != null && row.score >= 35))
     .sort((a, b) => {
       const scoreDiff = (b.score ?? -999) - (a.score ?? -999);
@@ -773,38 +778,58 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
       return b.count - a.count;
     })
     .slice(0, 12);
-  if (!importantRows.length && !targetCategoryExcludedRows.length) return '';
-  const targetRowsBlock = targetCategoryExcludedRows.length ? `
+  const sourceSummaryBlock = `
 <div class="card">
-  <h2>目标类目内被排除 Listing 汇总</h2>
-  <div style="margin-bottom:10px;padding:8px 12px;background:#f0f5ff;border-left:4px solid #2f54eb;border-radius:6px;font-size:12px;color:#555;line-height:1.8;">
-    这些类目本身仍是目标类目；这里统计的是目标类目下被产品级 Codex 明确排除的父体 Listing，例如替换头、清洁砖、机器人、桶、通用清洁工具或其它非核心产品。它们不参与最终市场容量、竞争、CPC、存活率等判断。
+  <h2>排除来源汇总</h2>
+  <div style="margin-bottom:10px;padding:8px 12px;background:#f6ffed;border-left:4px solid #52c41a;border-radius:6px;font-size:12px;color:#555;line-height:1.8;">
+    这里把排除来源拆开展示：JS/规则默认排除、产品级 Codex 明确排除、销量底线排除是不同机制，不能混为同一类判断。目标类目 listing 不做产品级 Codex；若出现在排除项中，通常是销量底线等硬过滤。
   </div>
   <div class="scroll-table">
     <table>
-      <tr><th>#</th><th>目标类目</th><th>被排除父体数</th><th>占全部排除项</th><th>类目相关分</th><th>说明</th></tr>
-      ${targetCategoryExcludedRows.map((row, index) => `
+      <tr><th>#</th><th>排除来源</th><th>父体数</th><th>占全部排除项</th><th>口径说明</th></tr>
+      ${sourceRows.map((row, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(row.label)}</td>
+        <td>${row.count}</td>
+        <td>${(row.share * 100).toFixed(1)}%</td>
+        <td style="min-width:420px;white-space:normal;line-height:1.5;color:#666;">${escapeHtml(row.description)}</td>
+      </tr>`).join('')}
+    </table>
+  </div>
+</div>`;
+  const codexRowsBlock = codexRows.length ? `
+<div class="card">
+  <h2>产品级 Codex 明确排除类目</h2>
+  <div style="margin-bottom:10px;padding:8px 12px;background:#fff2f0;border-left:4px solid #ff4d4f;border-radius:6px;font-size:12px;color:#666;line-height:1.8;">
+    这些是第二层 listing 救回复核中被 Codex 明确判定为非核心产品的类目，只统计带有 <code>codexSemanticReviewExcluded</code> 标记的 listing。
+  </div>
+  <div class="scroll-table">
+    <table>
+      <tr><th>#</th><th>Codex 排除类目</th><th>父体数量</th><th>排除占比</th><th>类目相关分</th><th>提示</th><th>评分原因</th></tr>
+      ${codexRows.map((row, index) => `
       <tr>
         <td>${index + 1}</td>
         <td style="min-width:360px;max-width:760px;white-space:normal;line-height:1.5;">${escapeHtml(row.category)}</td>
         <td>${row.count}</td>
         <td>${(row.share * 100).toFixed(1)}%</td>
         <td>${row.score == null ? '--' : row.score.toFixed(1)}</td>
-        <td style="min-width:240px;white-space:normal;line-height:1.5;color:#666;">目标类目直入前先执行产品级 Codex 排除；被判非核心产品的 listing 会保留在排除项中。</td>
+        <td>${escapeHtml(row.flags.length ? row.flags.join('；') : '产品级 Codex 排除')}</td>
+        <td style="min-width:240px;white-space:normal;line-height:1.5;color:#666;">${escapeHtml(row.reason || '--')}</td>
       </tr>`).join('')}
     </table>
   </div>
 </div>` : '';
-  const nonTargetRowsBlock = importantRows.length ? `
+  const defaultRowsBlock = defaultRows.length ? `
 <div class="card">
-  <h2>非目标高分/高占比被过滤类目</h2>
+  <h2>非目标默认排除/JS 规则过滤类目</h2>
   <div style="margin-bottom:10px;padding:8px 12px;background:#fff7e6;border-left:4px solid #faad14;border-radius:6px;font-size:12px;color:#666;line-height:1.8;">
-    展示规则：只列出非目标类目中，被过滤父体 Listing 数量占比 ≥5%，或类目相关性评分 ≥35 的类目。若提示“上下文冲突已拦截”，表示类目有字面词命中但与关键词核心语境冲突，脚本已扣分并禁止其直接成为目标类目；若提示“叶子类目缺修饰词已拦截”，表示关键词修饰词只在父级出现、叶子类目只命中通用形态词，且标题强匹配不足；若提示“待 Codex 语义复核”，表示需人工/Codex 判断是否同产品同功能后才救回。
+    展示规则：只列出默认排除或 JS 规则过滤中，被过滤父体 Listing 数量占比 ≥5%，或类目相关性评分 ≥35 的类目。这里不是产品级 Codex 排除；若类目需要救回，应先满足候选条件并进入 <code>*-codex-semantic-review.json</code>。
   </div>
   <div class="scroll-table">
     <table>
-      <tr><th>#</th><th>非目标被过滤类目</th><th>父体数量</th><th>排除占比</th><th>类目相关分</th><th>原始分/扣分</th><th>提示</th><th>评分原因</th></tr>
-      ${importantRows.map((row, index) => `
+      <tr><th>#</th><th>默认/JS 过滤类目</th><th>父体数量</th><th>排除占比</th><th>类目相关分</th><th>原始分/扣分</th><th>提示</th><th>评分原因</th></tr>
+      ${defaultRows.map((row, index) => `
       <tr>
         <td>${index + 1}</td>
         <td style="min-width:360px;max-width:760px;white-space:normal;line-height:1.5;">${escapeHtml(row.category)}</td>
@@ -818,7 +843,7 @@ function buildExcludedCategorySummaryBlock(jsonData, excludedItems) {
     </table>
   </div>
 </div>` : '';
-  return `${targetRowsBlock}${nonTargetRowsBlock}`;
+  return `${sourceSummaryBlock}${codexRowsBlock}${defaultRowsBlock}`;
 }
 
 const rawTotal = jsonData.rawTotal || data.length;
@@ -1172,6 +1197,11 @@ const salesAvg = allSalesNums.length > 0 ? Math.round(allSalesNums.reduce((a, b)
 const salesMax = allSalesNums.length > 0 ? Math.max(...allSalesNums) : 0;
 const salesMin = allSalesNums.length > 0 ? Math.min(...allSalesNums) : 0;
 const salesFloorMinTarget = Number(jsonData.analysisSalesFloor || process.env.OALUR_SALES_FLOOR_MIN || 200);
+const salesFloorExcludedSummary = jsonData.salesFloorExcludedSummary || {};
+const salesFloorExcludedCount = Number(jsonData.salesFloorExcludedCount || salesFloorExcludedSummary.count || 0);
+const salesFloorExcludedText = salesFloorExcludedCount > 0
+  ? `本次另有 ${salesFloorExcludedCount} 个目标相关父体因月销量低于 ${salesFloorMinTarget.toLocaleString()} 被移出市场分析池；这些产品不参与容量、竞争、利润、新品和最终评分，但会保留在排除项/日志中供复查。`
+  : `本次未发现目标相关父体月销量低于 ${salesFloorMinTarget.toLocaleString()} 的排除样本。`;
 const sampleIncreaseReasons = [];
 if (data.length > 0 && data.length < 90) sampleIncreaseReasons.push(`过滤后目标父体仅 ${data.length} 个，低于 90 个的稳定分析样本线`);
 if (missingSalesCount > 0) sampleIncreaseReasons.push(`${missingSalesCount} 个目标父体月销量缺失，未计入最低/中位销量统计`);
@@ -1181,13 +1211,13 @@ const salesFloorExpansionLevel = shouldSuggestMoreSamples ? '建议增加样本'
 const salesFloorExpansionText = !allSalesNums.length
   ? `过滤后产品缺少月销量数据；本报告仍按用户输入的 BSR 范围 1-${bsrMax.toLocaleString()} 固定分析，不做自动扩容判断。`
   : shouldSuggestMoreSamples
-    ? `本报告仍按用户输入的 BSR 范围 1-${bsrMax.toLocaleString()} 固定分析，不自动扩大 BSR；但当前样本建议继续增加：${sampleIncreaseReasons.join('；')}。月销量缺失或低于 ${salesFloorMinTarget.toLocaleString()} 的目标产品仍保留在分析池，不再因销量底线移入排除项。`
-    : `本报告按用户输入的 BSR 范围 1-${bsrMax.toLocaleString()} 固定分析，不做自动扩容或下一轮 BSR 建议。月销量缺失或低于 ${salesFloorMinTarget.toLocaleString()} 的目标产品仍保留在分析池，不再因销量底线移入排除项。`;
+    ? `本报告仍按用户输入的 BSR 范围 1-${bsrMax.toLocaleString()} 固定分析，不自动扩大 BSR；但当前样本建议继续增加：${sampleIncreaseReasons.join('；')}。${salesFloorExcludedText}`
+    : `本报告按用户输入的 BSR 范围 1-${bsrMax.toLocaleString()} 固定分析，不做自动扩容或下一轮 BSR 建议。${salesFloorExcludedText}`;
 const salesFloorExpansionBlock = `
   <div style="margin-top:12px;padding:12px 14px;background:${shouldSuggestMoreSamples ? '#fff7e6' : '#f6ffed'};border-left:4px solid ${shouldSuggestMoreSamples ? '#faad14' : '#52c41a'};border-radius:8px;font-size:13px;line-height:1.8;color:#555;">
     <strong>BSR 分析范围：</strong>${salesFloorExpansionLevel}<br>
     ${salesFloorExpansionText}<br>
-    <strong>判断口径：</strong>用户输入多少 BSR，就只分析该范围内抓取并过滤后的父体 Listing；系统不会自动扩大 BSR，但会在目标父体数量不足或最低月销量明显偏高时提示增加样本。
+    <strong>判断口径：</strong>用户输入多少 BSR，就只分析该范围内抓取、类目过滤、Codex 救回且月销量达到 ${salesFloorMinTarget.toLocaleString()} 的父体 Listing；低于销量底线的目标相关产品不参与市场决策，但保留在排除项和日志中。
   </div>`;
 
 // 閿€鍞缁熻锛堢編鍏冿級
@@ -1656,12 +1686,13 @@ const newProductsAboveTarget = newProductsData.filter(d => d.bsr <= bsrMax).leng
 // Oalur exports Ratings count here, not Amazon review count. Estimate reviews as 8% of ratings.
 const REVIEW_ESTIMATE_RATE = 0.08;
 function parseRatingCount(d) {
-  if (!d.ratings) return 0;
-  const n = parseInt(d.ratings.replace(/,/g, '').trim());
-  return isNaN(n) ? 0 : n;
+  if (!d.ratings) return null;
+  const n = parseInt(String(d.ratings).replace(/,/g, '').trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 function parseReviewCount(d) {
-  return Math.round(parseRatingCount(d) * REVIEW_ESTIMATE_RATE);
+  const ratings = parseRatingCount(d);
+  return ratings == null ? null : Math.round(ratings * REVIEW_ESTIMATE_RATE);
 }
 const reviewRanges = [
   { label: '< 50', min: 0, max: 50 },
@@ -1672,21 +1703,24 @@ const reviewRanges = [
 ];
 const reviewDist = reviewRanges.map(r => ({
   label: r.label,
-  count: data.filter(d => { const rc = parseReviewCount(d); return rc >= r.min && rc < r.max; }).length
+  count: data.filter(d => { const rc = parseReviewCount(d); return rc != null && rc >= r.min && rc < r.max; }).length
 }));
-const lowReviewCount = data.filter(d => parseReviewCount(d) < 500).length;
-const lowReviewPct = data.length > 0 ? ((lowReviewCount / data.length) * 100).toFixed(1) : '0';
-const avgReviews = data.length > 0 ? Math.round(data.reduce((s, d) => s + parseReviewCount(d), 0) / data.length).toLocaleString() : '-';
+const validReviewNums = data.map(d => parseReviewCount(d)).filter(n => n != null);
+const lowReviewCount = validReviewNums.filter(n => n < 500).length;
+const lowReviewPct = validReviewNums.length > 0 ? ((lowReviewCount / validReviewNums.length) * 100).toFixed(1) : '0';
+const avgReviews = validReviewNums.length > 0 ? Math.round(validReviewNums.reduce((s, n) => s + n, 0) / validReviewNums.length).toLocaleString() : '-';
 
 // Top 20 review analysis by BSR.
 const top20ByBsr = [...data].sort((a, b) => (a.bsr || 999999) - (b.bsr || 999999)).slice(0, 20);
-const top20Reviews = top20ByBsr.map(d => parseReviewCount(d)).filter(n => n > 0).sort((a, b) => a - b);
-const top20AvgReviews = top20ByBsr.length > 0 ? Math.round(top20ByBsr.reduce((s, d) => s + parseReviewCount(d), 0) / top20ByBsr.length).toLocaleString() : '-';
+const top20Reviews = top20ByBsr.map(d => parseReviewCount(d)).filter(n => n != null).sort((a, b) => a - b);
+const top20ReviewCoverage = top20ByBsr.length > 0 ? top20Reviews.length / top20ByBsr.length : 0;
+const top20AvgReviews = top20Reviews.length > 0 ? Math.round(top20Reviews.reduce((s, n) => s + n, 0) / top20Reviews.length).toLocaleString() : '-';
 const top20ReviewMedian = top20Reviews.length > 0 ? (top20Reviews.length % 2 !== 0 ? top20Reviews[Math.floor(top20Reviews.length / 2)] : Math.round((top20Reviews[top20Reviews.length / 2 - 1] + top20Reviews[top20Reviews.length / 2]) / 2)) : 0;
-const top20LowReviewCount = top20ByBsr.filter(d => parseReviewCount(d) < 100).length; // 鐭ヨ瘑搴撴爣鍑嗭細鍓?0涓?100鏉＄殑鏁伴噺
+const top20LowReviewCount = top20Reviews.filter(n => n < 100).length;
+const top20HasPureNewParent = top20ByBsr.some(d => d.isPureUnder6mParent);
 
 // Global review median.
-const allReviewNums = data.map(d => parseReviewCount(d)).filter(n => n > 0).sort((a, b) => a - b);
+const allReviewNums = [...validReviewNums].sort((a, b) => a - b);
 const reviewMedian = allReviewNums.length > 0 ? (allReviewNums.length % 2 !== 0 ? allReviewNums[Math.floor(allReviewNums.length / 2)] : Math.round((allReviewNums[allReviewNums.length / 2 - 1] + allReviewNums[allReviewNums.length / 2]) / 2)) : 0;
 
 // --- 6. 鍗栧鎬ц川涓庡競鍦虹粨鏋勶紙鎸夐浼伴攢閲忥級 ---
@@ -1743,10 +1777,10 @@ if (top20AvgReviews !== '-' && parseInt(top20AvgReviews.replace(/,/g, '')) < 600
 } else {
   compReasons.push('前 20 名预估评论 ' + top20AvgReviews + '，高于 600，评论壁垒较高');
 }
-if (reviewMedian < 350) {
-  compReasons.push('预估评论中位数 ' + reviewMedian.toLocaleString() + '，低于 350');
+if (top20ReviewMedian < 350) {
+  compReasons.push('前 20 预估评论中位数 ' + top20ReviewMedian.toLocaleString() + '，低于 350');
 } else {
-  compReasons.push('预估评论中位数 ' + reviewMedian.toLocaleString() + '，高于 350，历史积累较深');
+  compReasons.push('前 20 预估评论中位数 ' + top20ReviewMedian.toLocaleString() + '，高于 350，历史积累较深');
 }
 if (top20LowReviewCount >= 3) {
   compReasons.push('前 20 名中有 ' + top20LowReviewCount + ' 个预估评论数低于 100，新品仍有挤入机会');
@@ -1786,9 +1820,9 @@ const compCheckRows = [
   },
   {
     dim: '评论壁垒',
-    current: `前20预估均评 ${top20AvgReviews}；预估中位数 ${reviewMedian.toLocaleString()}；前20低预估评论数 ${top20LowReviewCount} 个`,
+    current: `前20预估均评 ${top20AvgReviews}；前20预估中位数 ${top20ReviewMedian.toLocaleString()}；前20低预估评论数 ${top20LowReviewCount} 个；有效样本 ${top20Reviews.length}/${top20ByBsr.length}`,
     standard: '前20预估均评 <600；预估中位数 <350；前20预估评论数<100的产品 >=3',
-    result: passText(top20AvgReviews !== '-' && parseInt(top20AvgReviews.replace(/,/g, '')) < 600 && reviewMedian < 350 && top20LowReviewCount >= 3),
+    result: passText(top20AvgReviews !== '-' && parseInt(top20AvgReviews.replace(/,/g, '')) < 600 && top20ReviewMedian < 350 && top20LowReviewCount >= 3),
     note: 'Oalur 当前抓取的是 Ratings，按 8% 折算为预估评论数；低评论数不是低评分。'
   },
   {
@@ -1853,7 +1887,7 @@ const compStandardsRef = `
     <tr><td>TOP3 品牌合计</td><td>&lt; 45%</td><td>${top3BrandShare}%</td><td>${parseFloat(top3BrandShare) < 45 ? '达标' : '未达标'}</td></tr>
     <tr><td>品牌分散度</td><td>&gt; 40%</td><td>${brandDispersion}%</td><td>${parseFloat(brandDispersion) > 40 ? '达标' : '未达标'}</td></tr>
     <tr><td>前 20 平均预估评论数</td><td>&lt; 600</td><td>${top20AvgReviews}</td><td>${top20AvgReviews !== '-' && parseInt(top20AvgReviews.replace(/,/g, '')) < 600 ? '达标' : '未达标'}</td></tr>
-    <tr><td>预估评论中位数</td><td>&lt; 350</td><td>${reviewMedian.toLocaleString()}</td><td>${reviewMedian < 350 ? '达标' : '未达标'}</td></tr>
+    <tr><td>前 20 预估评论中位数</td><td>&lt; 350</td><td>${top20ReviewMedian.toLocaleString()}</td><td>${top20ReviewMedian < 350 ? '达标' : '未达标'}</td></tr>
     <tr><td>前 20 中预估评论 &lt;100 的产品数</td><td>&gt;= 3 个</td><td>${top20LowReviewCount} 个</td><td>${top20LowReviewCount >= 3 ? '达标' : '未达标'}</td></tr>
     <tr><td>Oalur 平均毛利率</td><td>美国 ≥35%，严格 ≥40%</td><td>${avgMarginPct == null ? '未采集' : avgMarginPct.toFixed(1) + '%'}</td><td>${avgMarginPct == null ? '未分析' : avgMarginPct >= 40 ? '稳健' : avgMarginPct >= 35 ? '过底线' : '未达标'}</td></tr>
     <tr><td>纯新父体占比（&lt;6个月）</td><td>存在可观察纯新父体</td><td>${pureNewProductsData.length} 个（${pureNewPct}%）</td><td>${parseFloat(pureNewPct) > 10 ? '活跃' : '偏少'}</td></tr>
@@ -1969,7 +2003,7 @@ const replacements = {
   '{{TOP5_BRAND_SHARE}}': top5BrandShare,
   '{{BRAND_DISPERSION}}': brandDispersion,
   '{{AVG_REVIEWS}}': avgReviews,
-  '{{REVIEW_MEDIAN}}': reviewMedian.toLocaleString(),
+  '{{REVIEW_MEDIAN}}': top20ReviewMedian.toLocaleString(),
   '{{TOP20_AVG_REVIEWS}}': top20AvgReviews,
   '{{TOP20_REVIEW_MEDIAN}}': top20ReviewMedian.toLocaleString(),
   '{{TOP20_LOW_REVIEW_COUNT}}': top20LowReviewCount,
@@ -2122,9 +2156,19 @@ const cpcMetricCpc = cpcSummary?.medianCpc ?? cpcSummary?.avgCpc ?? null;
 const cpcMetricRatio = cpcSummary?.medianCpcPriceRatioPct ?? cpcSummary?.avgCpcPriceRatioPct ?? null;
 const cpcMetricLabel = cpcSummary?.medianCpcPriceRatioPct == null ? '平均' : '中位';
 const cpcSampleSelection = cpcOpportunityData?.sampleSelection || null;
+const cpcCvrScenarios = [5, 10, 15].map(cvrPct => ({
+  cvrPct,
+  acosPct: cpcMetricRatio == null ? null : Number(cpcMetricRatio) / (cvrPct / 100)
+}));
+const breakEvenCvrPct = cpcMetricRatio == null || salesWeightedMarginPct == null || salesWeightedMarginPct <= 0
+  ? null
+  : Number(cpcMetricRatio) / (salesWeightedMarginPct / 100);
+const cpcScenarioText = cpcMetricRatio == null
+  ? 'CPC/客单价缺失，无法计算转化率情景。'
+  : cpcCvrScenarios.map(row => `CVR ${row.cvrPct}% → 预估 ACoS ${row.acosPct.toFixed(1)}%`).join('；');
 const cpcOpportunityBlock = cpcSummary ? `
   <div style="margin-top:18px;padding:14px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;">
-    <h3 style="margin-top:0;">CPC/客单价比值（广告成本快判）</h3>
+    <h3 style="margin-top:0;">CPC/客单价压力代理（非真实广告成本）</h3>
     <div class="metric-grid">
       <div class="metric"><div class="value">${cpcMetricCpc == null ? '未采集' : '$' + Number(cpcMetricCpc).toFixed(2)}</div><div class="label">${cpcMetricLabel} CPC</div></div>
       <div class="metric"><div class="value">${cpcMetricRatio == null ? '未采集' : Number(cpcMetricRatio).toFixed(2) + '%'}</div><div class="label">${cpcMetricLabel} CPC/客单价</div></div>
@@ -2134,6 +2178,7 @@ const cpcOpportunityBlock = cpcSummary ? `
     <div style="font-size:13px;line-height:1.8;color:#555;margin-top:8px;">
       <strong>结论：</strong>${escapeHtml(cpcSummary.conclusion || '')}<br>
       <strong>样本口径：</strong>${escapeHtml(cpcSampleSelection?.source || '过滤后父体 Listing')}，优先按父体月销量取前 ${escapeHtml(cpcSampleSelection?.limit || 30)} 个，排除价格异常和 Ratings 缺失样本，报告主指标取中位数。<br>
+      <strong>CVR 情景：</strong>${cpcScenarioText}。${breakEvenCvrPct == null ? '毛利率不足，无法计算盈亏平衡 CVR。' : `按销量加权毛利率 ${salesWeightedMarginPct.toFixed(1)}% 粗算，广告贡献毛利盈亏平衡 CVR 约 ${breakEvenCvrPct.toFixed(1)}%。`}<br>
       <strong>判断标准：</strong>CPC/客单价 &lt;5% 健康；5%-8% 可接受；8%-12% 偏高，需要强利润/强转化支撑；12%-15% 高风险；&ge;15% 很高风险。单看 CPC 绝对值无意义，必须结合客单价。
     </div>
     <div class="scroll-table" style="margin-top:12px;">
@@ -2153,7 +2198,7 @@ const cpcOpportunityBlock = cpcSummary ? `
   </div>
 ` : `
   <div style="margin-top:18px;padding:12px;background:#fff7e6;border:1px solid #ffd591;border-radius:8px;font-size:13px;color:#555;">
-    <strong>CPC/客单价比值：</strong>未加载 CPC 数据。可运行 <code>extract-cpc-opportunity.js</code> 生成 <code>*-cpc-opportunity.json</code> 后重新生成报告。
+    <strong>CPC/客单价压力代理：</strong>未加载 CPC 数据。可运行 <code>extract-cpc-opportunity.js</code> 生成 <code>*-cpc-opportunity.json</code> 后重新生成报告。
   </div>
 `;
 
@@ -2184,10 +2229,10 @@ replacements['{{PROFIT_BLOCK}}'] = `
       <tr><td>低毛利销量占比（5分）</td><td>&lt;10%</td><td>10%-40%</td><td>≥40%</td><td>${fmtPct(lowMarginSalesSharePct)}</td></tr>
       <tr><td>销量加权 FBA/售价（3分）</td><td>&lt;20%</td><td>20%-35%</td><td>≥35%</td><td>${fmtPct(salesWeightedFbaRatio)}</td></tr>
       <tr><td>价格带利润结构（4分）</td><td>单件毛利≥$4</td><td>$2-$4</td><td>&lt;$2</td><td>${fmtMoney(salesWeightedUnitGrossProfit)}</td></tr>
-      <tr><td>CPC/客单价（广告成本模块）</td><td>&lt;8%</td><td>8%-15%</td><td>&ge;15%</td><td>${cpcMetricRatio == null ? '未采集' : Number(cpcMetricRatio).toFixed(2) + '%'}</td></tr>
+      <tr><td>CPC/客单价（压力代理模块）</td><td>&lt;8%</td><td>8%-15%</td><td>&ge;15%</td><td>${cpcMetricRatio == null ? '未采集' : Number(cpcMetricRatio).toFixed(2) + '%'}</td></tr>
     </table>
     <div style="font-size:12px;color:#666;line-height:1.8;margin-top:8px;">
-      利润口径：${Object.entries(profitSourceCounts).map(([k, v]) => `${escapeHtml(k)} ${v} 个`).join('；')}。当前历史数据如果缺少子 ASIN margin，只能用代表 ASIN 代理父体利润；新抓取数据会保留子 ASIN margin 并优先用子 ASIN 中位数。CPC/客单价已在广告成本模块单独计分。
+      利润口径：${Object.entries(profitSourceCounts).map(([k, v]) => `${escapeHtml(k)} ${v} 个`).join('；')}。当前历史数据如果缺少子 ASIN margin，只能用代表 ASIN 代理父体利润；新抓取数据会保留子 ASIN margin 并优先用子 ASIN 中位数。CPC/客单价已在压力代理模块单独计分。
     </div>
   </div>
   <div class="scroll-table" style="margin-top:14px;">
@@ -2253,7 +2298,8 @@ replacements['{{EXCLUDED_ROWS}}'] = excluded.map((d, i) => {
     : '产品级 Codex 明确排除';
   const reason = d.keywordIntentRescueRejectedReason
     ? '旧标题意图救回失败：价格超出目标类目区间'
-    : (d.codexSemanticReviewExcluded ? codexExcludedReason : null)
+    : (d.salesFloorExcluded ? `月销量低于 ${Number(d.salesFloorMin || salesFloorMinTarget).toLocaleString()}，不参与市场分析决策` : null)
+      || (d.codexSemanticReviewExcluded ? codexExcludedReason : null)
       || (d.targetCategoryTitleIntentRejected ? '目标宽类目标题意图不匹配' : '非目标类目');
   return '<tr><td>' + (i + 1) + '</td><td>' + asinCell + '</td><td style="min-width:360px;max-width:720px;white-space:normal;line-height:1.5;" title="' + escapeHtml(fullTitle) + '">' + escapeHtml(shortTitle) + '</td><td style="font-size:11px;color:#999;">' + escapeHtml(d.category || '未识别') + '</td><td style="font-size:12px;color:#666;">' + escapeHtml(reason) + '</td></tr>';
 }).join('\n');
@@ -2266,7 +2312,7 @@ const kwSourceRows = kwSourceData.map((k, i) =>
 
 // Product detail rows.
 replacements['{{PRODUCT_ROWS}}'] = data.sort((a, b) => a.bsr - b.bsr).map((d, i) =>
-  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + (d.codexSemanticReviewRescued ? '<span style="color:#ad6800;font-weight:600;">产品级 Codex 救回</span>' : (d.keywordIntentRescued ? '<span style="color:#ad6800;font-weight:600;">旧标题意图救回</span>' : (d.targetCategoryTitleIntentRequired ? '<span style="color:#096dd9;font-weight:600;">目标类目+标题意图</span>' : '目标类目'))) + '</td><td>' + childAsinCountExcludingRepresentative(d) + '</td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + parseReviewCount(d).toLocaleString() + ' / ' + (d.ratings || '0') + '</td><td>' + d.brand + '</td></tr>'
+  '<tr><td>' + (i + 1) + '</td><td style="max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="' + d.title + '">' + d.title.substring(0, 60) + '</td><td><a href="https://www.amazon.com/dp/' + d.asin + '" target="_blank">' + d.asin + '</a></td><td>' + (d.codexSemanticReviewRescued ? '<span style="color:#ad6800;font-weight:600;">产品级 Codex 救回</span>' : (d.keywordIntentRescued ? '<span style="color:#ad6800;font-weight:600;">旧标题意图救回</span>' : (d.targetCategoryTitleIntentRequired ? '<span style="color:#096dd9;font-weight:600;">目标类目+标题意图</span>' : '目标类目'))) + '</td><td>' + childAsinCountExcludingRepresentative(d) + '</td><td>' + d.sales + '</td><td>' + d.bsr + '</td><td>' + d.subRank + '</td><td>' + d.price + '</td><td>' + formatAge(d) + '</td><td>' + (parseReviewCount(d)?.toLocaleString() || '缺失') + ' / ' + (d.ratings || '缺失') + '</td><td>' + d.brand + '</td></tr>'
 ).join('\n');
 replacements['{{KW_SOURCE_ROWS}}'] = kwSourceRows;
 
@@ -2497,8 +2543,7 @@ if (seasonalityData && seasonalityData.seasonality) {
   const asinProducts = seasonalityData.asinTrendsData?.products;
   if (asinProducts) {
     // 鍙繚鐣欏綋鍓嶈繃婊ゅ悗浜у搧鍒楄〃涓殑 ASIN锛堢‘淇濅笌浜у搧鏄庣粏琛ㄤ竴鑷达級
-    const currentFilteredAsins = new Set(data.map(d => d.asin).filter(Boolean));
-    const validProducts = asinProducts.filter(p => p.trendData && currentFilteredAsins.has(p.asin));
+    const validProducts = asinProducts.filter(p => p.trendData && currentFilteredListingAsinSet.has(p.asin));
     // Calculate max monthly revenue across ASINs for a shared y-axis.
     validProducts.forEach(p => {
       const revs = p.trendData.monthlyRevenue.map(v => {
@@ -3179,7 +3224,7 @@ function auditRow(level, item, current, impact, nextStep) {
 const avgPriceNumForAudit = parseFloat(String(avgPrice).replace('$', '')) || 0;
 const lowPriceRisk = priceNums.length > 0 && priceNums.filter(p => p < 10).length / priceNums.length > 0.5;
 const top20AvgReviewNumForAudit = numFromDisplay(top20AvgReviews) ?? 0;
-const reviewBarrierHigh = top20AvgReviewNumForAudit >= 600 || reviewMedian >= 350 || top20LowReviewCount < 3;
+const reviewBarrierHigh = top20AvgReviewNumForAudit >= 600 || top20ReviewMedian >= 350 || top20LowReviewCount < 3;
 const strongSeasonal = String(seasonalityData?.seasonality?.seasonalityType || '').includes('确认强');
 const oalurPeakMonths = seasonalityData?.seasonality?.oalurPeakMonths || [];
 const top3ClickTrend = seasonalityData?.oalurVolumeData?.topClickRatioTrend || null;
@@ -3210,7 +3255,7 @@ auditItems.push(auditRow(
 auditItems.push(auditRow(
   reviewBarrierHigh ? '高风险' : '中风险',
   '评论壁垒偏高',
-  `前20平均预估评论 ${top20AvgReviews}；预估评论中位数 ${reviewMedian.toLocaleString()}；前20中预估评论<100 的产品 ${top20LowReviewCount} 个`,
+  `前20平均预估评论 ${top20AvgReviews}；前20预估评论中位数 ${top20ReviewMedian.toLocaleString()}；前20中预估评论<100 的产品 ${top20LowReviewCount} 个；有效样本 ${top20Reviews.length}/${top20ByBsr.length}`,
   '知识库标准为前20平均预估评论 <600、预估评论中位数 <350、前20中预估评论<100 至少 3 个。当前评论壁垒偏高，新品转化和自然排名追赶成本较大。',
   '补采前 10-20 个竞品的评论时间分布、差评标题、QA 和评分结构，区分真实壁垒与可改进缺陷机会。'
 ));
@@ -3224,11 +3269,11 @@ auditItems.push(auditRow(
 ));
 
 auditItems.push(auditRow(
-  '中风险',
-  'CPC 与广告壁垒未验证',
-  '当前报告没有核心关键词 CPC、首页广告位品牌结构、旺季 CPC 波动',
-  '知识库将 $1.4 CPC 作为美国站十人团队上限；若 CPC 超标，即使市场容量够，也可能被广告成本吞噬利润。',
-  '补采核心 3-5 个关键词 CPC、首页广告位品牌、旺季/淡季 CPC，并加入 ACoS 容忍度判断。'
+  cpcMetricRatio == null ? '中风险' : '低风险',
+  'CPC 与广告壁垒仍需真实转化率验证',
+  cpcMetricRatio == null ? '当前未采集核心关键词 CPC/客单价' : `已采集${cpcMetricLabel} CPC/客单价 ${Number(cpcMetricRatio).toFixed(2)}%，但缺少真实 CVR、广告位品牌结构和旺淡季波动`,
+  'CPC/客单价只能衡量点击成本压力，必须结合真实 CVR 才能得到实际 ACoS。',
+  '当前先看 CVR 5%/10%/15% 情景；产品深化阶段补采核心词真实 CVR、首页广告位品牌和旺淡季 CPC。'
 ));
 
 auditItems.push(auditRow(
@@ -3569,8 +3614,25 @@ function lifecycleRiskEvidence(dataObj, seasonalityObj) {
 function scoreFinalDecision() {
   const rows = [];
   const vetoes = [];
-  const addRow = (module, weight, score, current, standard, source, note) => {
-    rows.push({ module, weight, score, current, standard, source, note });
+  const addRow = (module, weight, score, current, standard, source, note, evidence = {}) => {
+    const missingReasons = Array.isArray(evidence.missingReasons) ? evidence.missingReasons.filter(Boolean) : [];
+    const knownWeight = Number.isFinite(evidence.knownWeight) ? Math.max(0, Math.min(weight, evidence.knownWeight)) : weight;
+    const minScore = Number.isFinite(evidence.minScore) ? evidence.minScore : score;
+    const maxScore = Number.isFinite(evidence.maxScore) ? evidence.maxScore : score;
+    rows.push({
+      module,
+      weight,
+      score,
+      current,
+      standard,
+      source,
+      note,
+      knownWeight,
+      minScore,
+      maxScore,
+      missingReasons,
+      evidenceStatus: missingReasons.length ? `中性暂定：${missingReasons.join('；')}` : '证据已采集'
+    });
   };
 
   const effectiveProductCountScore = data.length > 150 ? 5
@@ -3591,7 +3653,19 @@ function scoreFinalDecision() {
             : 0;
   const bsrContinuityScore = bsrHeadCoverageScore + bsrInternalContinuityScore;
   const capacityScore = effectiveProductCountScore + bsrContinuityScore;
-  addRow('市场容量', 15, capacityScore, `有效父体 ${data.length} 个，数量得分 ${effectiveProductCountScore}/5；第一个目标父体 BSR ${firstBsrValue == null ? '无法计算' : firstBsrValue.toLocaleString()}，头部覆盖 ${bsrHeadCoverageScore}/4；最大 BSR 断层 ${maxAdjacentBsrGap == null ? '无法计算' : maxAdjacentBsrGap.toLocaleString()}，断层比例 ${bsrGapRatio == null ? '无法计算' : (bsrGapRatio * 100).toFixed(1) + '%'}，内部连续 ${bsrInternalContinuityScore}/6；月销量最低 ${salesMin.toLocaleString()}，${salesFloorExpansionLevel}`, '有效父体数量5分：>150满分，>120得4，>90得3，>60得2，>30得1；BSR连续性10分=头部覆盖4分+内部连续6分；月销量最低数仅描述当前输入 BSR 范围内的样本底部。目标父体<90或最低月销量>600时，只提示增加样本，不自动扩容', '项目内部评分口径', `BSR连续性同时看头部是否有目标产品和出现目标产品后的内部断层，避免头部缺口被后段连续掩盖。${salesFloorExpansionText}`);
+  const capacityKnownWeight = (data.length > 0 ? 5 : 0) + (firstBsrRatio != null ? 4 : 0) + (bsrGapRatio != null ? 6 : 0);
+  const capacityKnownScore = (data.length > 0 ? effectiveProductCountScore : 0) + (firstBsrRatio != null ? bsrHeadCoverageScore : 0) + (bsrGapRatio != null ? bsrInternalContinuityScore : 0);
+  const capacityMissing = [
+    data.length === 0 ? '有效父体样本为空' : '',
+    firstBsrRatio == null ? '目标父体头部覆盖无法计算' : '',
+    bsrGapRatio == null ? 'BSR 内部连续性无法计算' : ''
+  ].filter(Boolean);
+  addRow('市场容量', 15, capacityScore, `有效父体 ${data.length} 个，数量得分 ${effectiveProductCountScore}/5；第一个目标父体 BSR ${firstBsrValue == null ? '无法计算' : firstBsrValue.toLocaleString()}，头部覆盖 ${bsrHeadCoverageScore}/4；最大 BSR 断层 ${maxAdjacentBsrGap == null ? '无法计算' : maxAdjacentBsrGap.toLocaleString()}，断层比例 ${bsrGapRatio == null ? '无法计算' : (bsrGapRatio * 100).toFixed(1) + '%'}，内部连续 ${bsrInternalContinuityScore}/6；月销量最低 ${salesMin.toLocaleString()}，${salesFloorExpansionLevel}`, '有效父体数量5分：>150满分，>120得4，>90得3，>60得2，>30得1；BSR连续性10分=头部覆盖4分+内部连续6分；月销量最低数只描述销量底线过滤后的市场分析池。目标父体<90或最低月销量>600时，只提示增加样本，不自动扩容', '项目内部评分口径', `BSR连续性同时看头部是否有目标产品和出现目标产品后的内部断层，避免头部缺口被后段连续掩盖。${salesFloorExpansionText}`, {
+    knownWeight: capacityKnownWeight,
+    minScore: capacityKnownScore,
+    maxScore: capacityKnownScore + (15 - capacityKnownWeight),
+    missingReasons: capacityMissing
+  });
 
   const latestOppForFinal = lastNumericTrendPoint(seasonalityData?.oalurVolumeData?.oppIndexTrend);
   const latestSearchForFinal = lastNumericTrendPoint(seasonalityData?.oalurVolumeData?.searchesTrend);
@@ -3608,7 +3682,14 @@ function scoreFinalDecision() {
   const supplyTrendForFinal = supplyTrendEvidence(seasonalityData?.oalurVolumeData?.productTotalNumTrend);
   const oppScore = oppBaseScore + supplyTrendForFinal.score;
   if (adjustedOppForFinal != null && adjustedOppForFinal < 0.2) vetoes.push('行业调整后基础机会指数 <0.2，属于极致红海。');
-  addRow('行业调整后机会指数', 15, oppScore, adjustedOppForFinal == null ? `机会指数未采集；在售趋势 ${supplyTrendForFinal.score}/7（${supplyTrendForFinal.level}）` : `机会指数 ${adjustedOppForFinal.toFixed(2)}（原始 ${rawOppForFinal.toFixed(2)} × ${oppAdjustmentForFinal.coefficient.toFixed(2)}），机会指数得分 ${oppBaseScore}/8；在售趋势 ${supplyTrendForFinal.score}/7（${supplyTrendForFinal.level}）`, '机会指数8分：>=2满分，1-2得6，0.5-1得4，0.2-0.5得2，<0.2得0；在售商品数趋势7分：按长期/近期/当前趋势组合真值表评分，不考虑有效机会指数', '知识库 + 项目内部系数', supplyTrendForFinal.text);
+  const opportunityKnownWeight = (adjustedOppForFinal == null ? 0 : 8) + (supplyTrendForFinal.longDeltaPct == null ? 0 : 7);
+  const opportunityKnownScore = (adjustedOppForFinal == null ? 0 : oppBaseScore) + (supplyTrendForFinal.longDeltaPct == null ? 0 : supplyTrendForFinal.score);
+  addRow('行业调整后机会指数', 15, oppScore, adjustedOppForFinal == null ? `机会指数未采集；在售趋势 ${supplyTrendForFinal.score}/7（${supplyTrendForFinal.level}）` : `机会指数 ${adjustedOppForFinal.toFixed(2)}（原始 ${rawOppForFinal.toFixed(2)} × ${oppAdjustmentForFinal.coefficient.toFixed(2)}），机会指数得分 ${oppBaseScore}/8；在售趋势 ${supplyTrendForFinal.score}/7（${supplyTrendForFinal.level}）`, '机会指数8分：>=2满分，1-2得6，0.5-1得4，0.2-0.5得2，<0.2得0；在售商品数趋势7分：按长期/近期/当前趋势组合真值表评分，不考虑有效机会指数', '知识库 + 项目内部系数', supplyTrendForFinal.text, {
+    knownWeight: opportunityKnownWeight,
+    minScore: opportunityKnownScore,
+    maxScore: opportunityKnownScore + (15 - opportunityKnownWeight),
+    missingReasons: [adjustedOppForFinal == null ? '机会指数未采集' : '', supplyTrendForFinal.longDeltaPct == null ? '在售商品数趋势不足' : ''].filter(Boolean)
+  });
 
   const top1ItemShareNum = parseFloat(top1ItemShare) || 0;
   const top3ItemShareNum = parseFloat(top3ItemShare) || 0;
@@ -3640,34 +3721,72 @@ function scoreFinalDecision() {
     + (amazonRetailShare < 10 ? 1 : 0);
   const competitionScore = brandCr3Score + itemConcentrationScore + top3TrafficScore + dispersionSellerScore;
   if (brandCr3 > 60) vetoes.push('品牌 CR3 >60%，头部品牌高垄断。');
-  addRow('品牌/单品集中度', 25, competitionScore, `品牌CR3 ${top3BrandShare}% 得 ${brandCr3Score}/8；TOP1单品 ${top1ItemShare}%、TOP3单品 ${top3ItemShare}% 得 ${itemConcentrationScore}/7；TOP3点击 ${finalAvgClick == null ? '未采集' : finalAvgClick.toFixed(1) + '%'}、转化 ${finalAvgConvert == null ? '未采集' : finalAvgConvert.toFixed(1) + '%'} 得 ${top3TrafficScore}/7；品牌分散度 ${brandDispersion}%、亚马逊自营 ${amazonRetailShare.toFixed(1)}% 得 ${dispersionSellerScore}/3`, '品牌CR3 8分；TOP1/TOP3单品销量集中度7分；TOP3点击/转化份额7分；品牌分散度/卖家结构3分', '知识库 + ABA趋势', 'TOP3 点击/转化比品牌 CR3 更接近真实流量和成交垄断；FBA/FBM 只是履约方式，卖家结构只惩罚亚马逊自营占比偏高。');
+  const concentrationKnown = totalSales > 0 && data.length > 0;
+  const trafficKnown = finalAvgClick != null && finalAvgConvert != null;
+  const sellerKnown = data.length > 0;
+  const competitionKnownWeight = (concentrationKnown ? 15 : 0) + (trafficKnown ? 7 : 0) + (sellerKnown ? 3 : 0);
+  const competitionKnownScore = (concentrationKnown ? brandCr3Score + itemConcentrationScore : 0) + (trafficKnown ? top3TrafficScore : 0) + (sellerKnown ? dispersionSellerScore : 0);
+  addRow('品牌/单品集中度', 25, competitionScore, `品牌CR3 ${top3BrandShare}% 得 ${brandCr3Score}/8；TOP1单品 ${top1ItemShare}%、TOP3单品 ${top3ItemShare}% 得 ${itemConcentrationScore}/7；TOP3点击 ${finalAvgClick == null ? '未采集' : finalAvgClick.toFixed(1) + '%'}、转化 ${finalAvgConvert == null ? '未采集' : finalAvgConvert.toFixed(1) + '%'} 得 ${top3TrafficScore}/7；品牌分散度 ${brandDispersion}%、亚马逊自营 ${amazonRetailShare.toFixed(1)}% 得 ${dispersionSellerScore}/3`, '品牌CR3 8分；TOP1/TOP3单品销量集中度7分；TOP3点击/转化份额7分；品牌分散度/卖家结构3分', '知识库 + ABA趋势', 'TOP3 点击/转化比品牌 CR3 更接近真实流量和成交垄断；FBA/FBM 只是履约方式，卖家结构只惩罚亚马逊自营占比偏高。', {
+    knownWeight: competitionKnownWeight,
+    minScore: competitionKnownScore,
+    maxScore: competitionKnownScore + (25 - competitionKnownWeight),
+    missingReasons: [concentrationKnown ? '' : '销量集中度无法计算', trafficKnown ? '' : 'TOP3 点击/转化趋势未采集', sellerKnown ? '' : '卖家结构样本为空'].filter(Boolean)
+  });
 
-  const top20AvgReviewNum = numFromDisplay(top20AvgReviews) ?? 0;
+  const top20AvgReviewNum = numFromDisplay(top20AvgReviews);
+  const reviewEvidenceKnown = top20ByBsr.length > 0 && top20ReviewCoverage >= 0.8;
   const reviewPassCount = [
-    top20AvgReviewNum < 600,
-    reviewMedian < 350,
+    top20AvgReviewNum != null && top20AvgReviewNum < 600,
+    top20Reviews.length > 0 && top20ReviewMedian < 350,
     top20LowReviewCount >= 3,
-    newProductsData.length > 0
+    top20HasPureNewParent
   ].filter(Boolean).length;
-  const reviewScore = reviewPassCount === 4 ? 15 : reviewPassCount === 3 ? 11 : reviewPassCount === 2 ? 8 : reviewPassCount === 1 ? 3 : 0;
-  addRow('评论壁垒', 15, reviewScore, `前20平均预估评论 ${top20AvgReviews}；预估中位数 ${reviewMedian.toLocaleString()}；前20低预估评论数产品 ${top20LowReviewCount} 个`, '前20平均预估评论 <600；预估中位数 <350；前20预估评论数<100的产品至少3个；近6个月有新品进前20', '知识库 + Oalur字段折算', `满足 ${reviewPassCount}/4 项。当前抓取字段是 Ratings，按 Ratings × 8% 估算评论数；评论壁垒衡量进入难度，但不应压过新品活力。`);
+  const reviewScore = reviewEvidenceKnown ? (reviewPassCount === 4 ? 15 : reviewPassCount === 3 ? 11 : reviewPassCount === 2 ? 8 : reviewPassCount === 1 ? 3 : 0) : 8;
+  addRow('评论壁垒', 15, reviewScore, `前20平均预估评论 ${top20AvgReviews}；前20预估中位数 ${top20ReviewMedian.toLocaleString()}；前20低预估评论数产品 ${top20LowReviewCount} 个；有效样本 ${top20Reviews.length}/${top20ByBsr.length}`, '前20平均预估评论 <600；前20预估中位数 <350；前20预估评论数<100的产品至少3个；近6个月纯新父体进入前20', '知识库 + Oalur字段折算', `满足 ${reviewPassCount}/4 项。当前抓取字段是 Ratings，按 Ratings × 8% 估算评论数；缺失 Ratings 不按 0 评论处理。`, {
+    knownWeight: reviewEvidenceKnown ? 15 : 0,
+    minScore: reviewEvidenceKnown ? reviewScore : 0,
+    maxScore: reviewEvidenceKnown ? reviewScore : 15,
+    missingReasons: reviewEvidenceKnown ? [] : [`前20 Ratings 有效覆盖仅 ${(top20ReviewCoverage * 100).toFixed(0)}%`]
+  });
 
   const survivalScore = survivalRateData
     ? Number(survivalRateData.survivalScore || 0)
-    : 0;
+    : 4;
   const survivalScore15 = Math.round(survivalScore * 1.5);
-  const newPctScore = newSalesCarryScore.score;
-  const under12Score = under12mBalancedScore;
+  const ageCoverage = data.length > 0 ? data.filter(d => parseAge(d) >= 0).length / data.length : 0;
+  const freshnessEvidenceKnown = data.length > 0 && ageCoverage >= 0.8;
+  const newPctScore = freshnessEvidenceKnown ? newSalesCarryScore.score : 4;
+  const under12Score = freshnessEvidenceKnown ? under12mBalancedScore : 4;
   const vitalityScore = survivalScore15 + newPctScore + under12Score;
-  addRow('新品活力', 30, vitalityScore, `6个月纯新父体存活：${survivalRateData ? (survivalRateData.hasNoNewProducts ? `历史严格纯新父体样本0，中性评分 ${survivalScore}/10，折算 ${survivalScore15}/15` : `${survivalRateData.survivalRateStr}，存活评分 ${survivalScore}/10，折算 ${survivalScore15}/15`) : '未分析'}；<6月销量承接 ${newPctScore}/8（样本${newSalesCarryScore.sampleScore}/1，质量${newSalesCarryScore.qualityScore}/${newSalesCarryScore.qualityMax}，分散${newSalesCarryScore.concentrationScore}/${newSalesCarryScore.concentrationMax}）；<12月销量承接 ${under12Score}/7（覆盖${under12mCoverageScore}/2，销量${under12mSalesShareScore}/3，质量${under12mSalesQualityScore}/2）`, '存活折算15分；当前<6月纯新父体销量承接8分，按销量质量和可复制性判断；<12月纯新父体销量承接7分，按覆盖度2分 + 销量占比3分 + 销量质量2分判断。历史窗口严格纯新父体样本为0时不是未分析，也不能按新品失败处理，给中性4/10并折算6/15。', '知识库 + 我的整理', `<6月窗口样本少，重点看是否已有新 Listing 拿到有效销量；<12月窗口更宽，加入销量质量但不过度奖励成熟新品。`);
+  const survivalEvidenceKnown = Boolean(survivalRateData && !survivalRateData.hasNoNewProducts);
+  const vitalityKnownWeight = (survivalEvidenceKnown ? 15 : 0) + (freshnessEvidenceKnown ? 15 : 0);
+  const vitalityKnownScore = (survivalEvidenceKnown ? survivalScore15 : 0) + (freshnessEvidenceKnown ? newPctScore + under12Score : 0);
+  addRow('新品活力', 30, vitalityScore, `6个月纯新父体存活：${survivalRateData ? (survivalRateData.hasNoNewProducts ? `历史严格纯新父体样本0，中性评分 ${survivalScore}/10，折算 ${survivalScore15}/15` : `${survivalRateData.survivalRateStr}，存活评分 ${survivalScore}/10，折算 ${survivalScore15}/15`) : `未分析，中性评分 ${survivalScore}/10，折算 ${survivalScore15}/15`}；<6月销量承接 ${newPctScore}/8；<12月销量承接 ${under12Score}/7；上架时间有效覆盖 ${(ageCoverage * 100).toFixed(0)}%`, '存活折算15分；当前<6月纯新父体销量承接8分，按销量质量和可复制性判断；<12月纯新父体销量承接7分，按覆盖度2分 + 销量占比3分 + 销量质量2分判断。历史窗口严格纯新父体样本为0时不是未分析，也不能按新品失败处理，给中性4/10并折算6/15。', '知识库 + 我的整理', `<6月窗口样本少，重点看是否已有新 Listing 拿到有效销量；<12月窗口更宽，加入销量质量但不过度奖励成熟新品。`, {
+    knownWeight: vitalityKnownWeight,
+    minScore: vitalityKnownScore,
+    maxScore: vitalityKnownScore + (30 - vitalityKnownWeight),
+    missingReasons: [survivalEvidenceKnown ? '' : '6个月纯新父体存活率无可验证样本', freshnessEvidenceKnown ? '' : `上架时间有效覆盖仅 ${(ageCoverage * 100).toFixed(0)}%`].filter(Boolean)
+  });
 
   const cpcRatio = cpcMetricRatio == null ? null : Number(cpcMetricRatio);
   const cpcScore = cpcRatio == null ? 8 : cpcRatio < 5 ? 15 : cpcRatio < 8 ? 12 : cpcRatio < 12 ? 8 : cpcRatio < 15 ? 3 : 0;
-  if (cpcRatio != null && cpcRatio >= 15) vetoes.push('CPC/客单价 >=15%，广告成本风险很高。');
-  addRow('广告成本', 15, cpcScore, cpcRatio == null ? '未采集' : `${cpcMetricLabel} ${cpcRatio.toFixed(2)}%`, '<5% 健康；5%-8% 可接受；8%-12% 偏高；12%-15% 高风险；>=15% 很高风险', '知识库 + Oalur ACOS', `样本优先取过滤后父体 Listing 销量前 ${cpcSampleSelection?.limit || 30}，排除价格异常和 Ratings 缺失样本，报告主指标用中位数。当前没有引入转化率模型，因此用更保守的 CPC/客单价分层。`);
+  if (cpcRatio != null && cpcRatio >= 15) vetoes.push('CPC/客单价 >=15%，点击成本压力代理达到很高风险。');
+  addRow('CPC/客单价压力代理', 15, cpcScore, cpcRatio == null ? '未采集' : `${cpcMetricLabel} ${cpcRatio.toFixed(2)}%；${cpcScenarioText}；盈亏平衡 CVR ${breakEvenCvrPct == null ? '无法计算' : breakEvenCvrPct.toFixed(1) + '%'}`, '<5% 健康；5%-8% 可接受；8%-12% 偏高；12%-15% 高风险；>=15% 很高风险', '知识库 + Oalur CPC', `这不是实际 ACoS。样本优先取过滤后父体 Listing 销量前 ${cpcSampleSelection?.limit || 30}，报告主指标用中位数；CVR 5%/10%/15% 仅作情景，不冒充类目真实转化率。`, {
+    knownWeight: cpcRatio == null ? 0 : 15,
+    minScore: cpcRatio == null ? 0 : cpcScore,
+    maxScore: cpcRatio == null ? 15 : cpcScore,
+    missingReasons: cpcRatio == null ? ['CPC/客单价未采集'] : []
+  });
 
   if (salesWeightedMarginPct != null && salesWeightedMarginPct < 35) vetoes.push('销量加权毛利率 <35%，低于利润底线。');
-  addRow('毛利空间', 20, marginScore, `销量加权毛利率 ${fmtPct(salesWeightedMarginPct)}，得 ${weightedMarginScore}/8；低毛利销量占比 ${fmtPct(lowMarginSalesSharePct)}，得 ${lowMarginSalesScore}/5；销量加权 FBA/售价 ${fmtPct(salesWeightedFbaRatio)}，得 ${fbaPressureScore}/3；销量加权单件毛利 ${fmtMoney(salesWeightedUnitGrossProfit)}，价格带利润结构得 ${priceProfitStructureScore}/4`, '销量加权毛利率8分：≥45满分，40-45得6，35-40得4，<35得0；低毛利销量占比5分：<10满分，10-25得3，25-40得1，≥40得0；FBA/售价3分：<20满分，20-28得2，28-35得1，≥35得0；价格带利润结构4分：单件毛利≥$4满分，$3-$4得3，$2-$3得1，<$2得0；低价带销量过半且单件毛利偏低时封顶', '知识库 + 我的整理', `价格带结构：${priceBandProfitStats.map(row => `${row.label}销量${fmtPct(row.salesSharePct)}、单件毛利${fmtMoney(row.weightedUnitGrossProfit)}`).join('；')}。利润口径：${Object.entries(profitSourceCounts).map(([k, v]) => `${k}${v}个`).join('；')}。CPC/客单价 ${cpcRatio == null ? '未采集' : cpcMetricLabel + ' ' + cpcRatio.toFixed(2) + '%'} 已在广告成本中计分。`);
+  const marginKnownWeight = (salesWeightedMarginPct == null ? 0 : 8) + (lowMarginSalesSharePct == null ? 0 : 5) + (fbaPressureRatioForScore == null ? 0 : 3) + (salesWeightedUnitGrossProfit == null ? 0 : 4);
+  const marginKnownScore = (salesWeightedMarginPct == null ? 0 : weightedMarginScore) + (lowMarginSalesSharePct == null ? 0 : lowMarginSalesScore) + (fbaPressureRatioForScore == null ? 0 : fbaPressureScore) + (salesWeightedUnitGrossProfit == null ? 0 : priceProfitStructureScore);
+  addRow('毛利空间', 20, marginScore, `销量加权毛利率 ${fmtPct(salesWeightedMarginPct)}，得 ${weightedMarginScore}/8；低毛利销量占比 ${fmtPct(lowMarginSalesSharePct)}，得 ${lowMarginSalesScore}/5；销量加权 FBA/售价 ${fmtPct(salesWeightedFbaRatio)}，得 ${fbaPressureScore}/3；销量加权单件毛利 ${fmtMoney(salesWeightedUnitGrossProfit)}，价格带利润结构得 ${priceProfitStructureScore}/4`, '销量加权毛利率8分：≥45满分，40-45得6，35-40得4，<35得0；低毛利销量占比5分：<10满分，10-25得3，25-40得1，≥40得0；FBA/售价3分：<20满分，20-28得2，28-35得1，≥35得0；价格带利润结构4分：单件毛利≥$4满分，$3-$4得3，$2-$3得1，<$2得0；低价带销量过半且单件毛利偏低时封顶', '知识库 + 我的整理', `价格带结构：${priceBandProfitStats.map(row => `${row.label}销量${fmtPct(row.salesSharePct)}、单件毛利${fmtMoney(row.weightedUnitGrossProfit)}`).join('；')}。利润口径：${Object.entries(profitSourceCounts).map(([k, v]) => `${k}${v}个`).join('；')}。CPC/客单价 ${cpcRatio == null ? '未采集' : cpcMetricLabel + ' ' + cpcRatio.toFixed(2) + '%'} 已在压力代理中计分。`, {
+    knownWeight: marginKnownWeight,
+    minScore: marginKnownScore,
+    maxScore: marginKnownScore + (20 - marginKnownWeight),
+    missingReasons: [salesWeightedMarginPct == null ? '销量加权毛利率缺失' : '', lowMarginSalesSharePct == null ? '低毛利销量占比缺失' : '', fbaPressureRatioForScore == null ? 'FBA/售价缺失' : '', salesWeightedUnitGrossProfit == null ? '单件毛利缺失' : ''].filter(Boolean)
+  });
 
   const seasonRisk = seasonalityRiskEvidence(seasonalityData);
   const seasonFinal = seasonalityFinalScore(seasonRisk);
@@ -3676,18 +3795,46 @@ function scoreFinalDecision() {
   const oldAsinLifecycle = oldAsinLifecycleFinalEvidence(lifecycleData);
   const demandScore9 = Math.round(demandScore / 6 * 9);
   const seasonLifecycleScore = seasonFinal.score + demandScore9;
-  addRow('季节性/生命周期风险', 15, seasonLifecycleScore, `季节性 ${seasonFinal.score}/6（${seasonRisk.level}）；搜索需求 ${demandScore9}/9（原始 ${demandScore}/6，${demandLifecycle.trendKey || '数据不足'}）；老品 ASIN 仅展示不计分（${oldAsinLifecycle.level}）`, '季节性6分 + 搜索需求生命周期9分；强季节性需至少两类证据；搜索需求按长期/近期/当前递进趋势组合评分；老品ASIN只作为验证信号，不进入最终评分', '知识库 + 我的整理', `${seasonFinal.text} ${demandLifecycle.text} 老品 ASIN 不计入最终评分，仅作趋势验证：${oldAsinLifecycle.text}`);
+  const seasonSourceCount = [googleSeasonalityRatio(seasonalityData), oalurSeasonalityRatio(seasonalityData), asinRevenueSeasonalityRatio(seasonalityData)].filter(value => value != null).length;
+  const seasonKnown = seasonSourceCount > 0;
+  const demandKnown = demandLifecycle.longDeltaPct != null;
+  const seasonLifecycleKnownWeight = (seasonKnown ? 6 : 0) + (demandKnown ? 9 : 0);
+  const seasonLifecycleKnownScore = (seasonKnown ? seasonFinal.score : 0) + (demandKnown ? demandScore9 : 0);
+  addRow('季节性/生命周期风险', 15, seasonLifecycleScore, `季节性 ${seasonFinal.score}/6（${seasonRisk.level}，有效来源 ${seasonSourceCount}/3）；搜索需求 ${demandScore9}/9（原始 ${demandScore}/6，${demandLifecycle.trendKey || '数据不足'}）；老品 ASIN 仅展示不计分（${oldAsinLifecycle.level}）`, '季节性6分 + 搜索需求生命周期9分；强季节性需至少两类证据；搜索需求按长期/近期/当前递进趋势组合评分；老品ASIN只作为验证信号，不进入最终评分', '知识库 + 我的整理', `${seasonFinal.text} ${demandLifecycle.text} 老品 ASIN 不计入最终评分，仅作趋势验证：${oldAsinLifecycle.text}`, {
+    knownWeight: seasonLifecycleKnownWeight,
+    minScore: seasonLifecycleKnownScore,
+    maxScore: seasonLifecycleKnownScore + (15 - seasonLifecycleKnownWeight),
+    missingReasons: [seasonKnown ? '' : '季节性来源均不足', demandKnown ? '' : '搜索需求趋势不足'].filter(Boolean)
+  });
 
   const totalScore = rows.reduce((sum, row) => sum + row.score, 0);
+  const minScore = rows.reduce((sum, row) => sum + row.minScore, 0);
+  const maxScore = rows.reduce((sum, row) => sum + row.maxScore, 0);
+  const knownWeight = rows.reduce((sum, row) => sum + row.knownWeight, 0);
+  const targetCategoryReviewComplete = Boolean(liveCodexReviewStatus.target?.ok && !liveCodexReviewStatus.target?.skipped);
+  const workflowMissingReasons = [
+    targetCategoryReviewComplete ? '' : '目标类目 Codex 复核未完整闭环',
+    liveCodexReviewStatus.semantic?.ok || (productCodexReviewCandidates.length === 0 || jsonData.codexSemanticReviewLoaded) ? '' : '产品级 Codex 救回复核尚未加载'
+  ].filter(Boolean);
+  const missingModules = rows
+    .filter(row => row.missingReasons.length)
+    .map(row => ({ module: row.module, reasons: row.missingReasons }));
+  const missingReasons = [...workflowMissingReasons, ...missingModules.flatMap(item => item.reasons.map(reason => `${item.module}：${reason}`))];
+  const dataCompleteness = Math.round(knownWeight / 150 * 100);
+  const hasCriticalMissing = missingReasons.length > 0;
   const finalLevel = vetoes.length > 0
     ? { text: '不进入产品深化', cls: 'fail' }
-    : totalScore >= 120
-      ? { text: '进入产品深化', cls: 'pass' }
+    : hasCriticalMissing && totalScore >= 105
+      ? { text: '高优先级补采', cls: 'caution' }
+      : hasCriticalMissing && maxScore >= 105
+        ? { text: '补采后再判断', cls: 'caution' }
+        : totalScore >= 120
+          ? { text: '已验证进入产品深化', cls: 'pass' }
       : totalScore >= 105
         ? { text: '补采后再判断', cls: 'caution' }
         : { text: '不进入产品深化', cls: 'fail' };
 
-  return { rows, vetoes, totalScore, finalLevel };
+  return { rows, vetoes, totalScore, minScore, maxScore, knownWeight, dataCompleteness, missingModules, missingReasons, hasCriticalMissing, finalLevel };
 }
 
 const finalDecision = scoreFinalDecision();
@@ -3699,36 +3846,43 @@ const finalRowsHtml = finalDecision.rows.map(row => `
     <td>${row.current}</td>
     <td>${row.standard}</td>
     <td>${row.source}</td>
+    <td>${escapeHtml(row.evidenceStatus)}</td>
     <td>${row.note}</td>
   </tr>`).join('\n');
 const finalVetoHtml = finalDecision.vetoes.length
   ? `<div style="margin-top:12px;padding:10px 12px;background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;font-size:13px;line-height:1.8;color:#a8071a;"><strong>一票否决项：</strong>${finalDecision.vetoes.map(escapeHtml).join('；')}</div>`
   : `<div style="margin-top:12px;padding:10px 12px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;font-size:13px;line-height:1.8;color:#237804;"><strong>一票否决项：</strong>未触发。新品6个月存活率不作为一票否决，只进入核心评分。</div>`;
+const finalMissingHtml = finalDecision.missingReasons.length
+  ? `<div style="margin-top:12px;padding:10px 12px;background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;font-size:13px;line-height:1.8;color:#874d00;"><strong>必须补齐后复核：</strong>${finalDecision.missingReasons.map(escapeHtml).join('；')}</div>`
+  : `<div style="margin-top:12px;padding:10px 12px;background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;font-size:13px;line-height:1.8;color:#237804;"><strong>数据完整度：</strong>本评分要求的关键证据均已采集。</div>`;
 const childAsinReportName = `${REPORT_DATE}_${safeSegment(jsonData.keyword || 'unknown')}_子ASIN明细.html`;
 
 replacements['{{FINAL_DECISION_BLOCK}}'] = `
 <div class="card" style="border:2px solid #1677ff;">
   <h2 style="border:none;padding-left:0;">最终评判标准：是否进入产品深化阶段</h2>
   <div class="summary">
-    <div class="metric"><div class="value">${finalDecision.totalScore}</div><div class="label">市场验证总分 / 150</div></div>
+    <div class="metric"><div class="value">${finalDecision.totalScore}</div><div class="label">暂定市场验证分 / 150</div></div>
+    <div class="metric"><div class="value">${finalDecision.minScore}-${finalDecision.maxScore}</div><div class="label">缺失数据可能区间</div></div>
+    <div class="metric"><div class="value">${finalDecision.dataCompleteness}%</div><div class="label">关键证据完整度</div></div>
     <div class="metric"><div class="value" style="font-size:22px;color:${finalDecision.finalLevel.cls === 'pass' ? '#52c41a' : finalDecision.finalLevel.cls === 'caution' ? '#faad14' : '#ff4d4f'}">${finalDecision.finalLevel.text}</div><div class="label">最终结论</div></div>
-    <div class="metric"><div class="value" style="font-size:18px;">≥120</div><div class="label">进入产品深化门槛</div></div>
+    <div class="metric"><div class="value" style="font-size:18px;">≥120 + 完整</div><div class="label">已验证进入门槛</div></div>
     <div class="metric"><div class="value" style="font-size:18px;">105-119</div><div class="label">补采/复核区间</div></div>
   </div>
   <div class="conclusion ${finalDecision.finalLevel.cls}" style="font-size:18px;text-align:left;line-height:1.8;">
     ${finalDecision.finalLevel.text}。本结论是报告首页最终评判标准，只判断是否值得继续做供应链、专利、样品、包装和差异化验证，不等于直接开发。
   </div>
   ${finalVetoHtml}
+  ${finalMissingHtml}
   <div style="margin-top:12px;padding:10px 12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;line-height:1.8;color:#475569;">
     <strong>相关报告：</strong><a href="./${childAsinReportName}" target="_blank">${childAsinReportName}</a><br>
     子 ASIN 明细报告展示每个父体 Listing 下的子 ASIN、类目、销量、销售额、BSR、上架时间和 Ratings；父体销量/销售额取 Oalur 代表父体行数值，父体 Ratings 按共享/独立评分规则计算。
   </div>
   <table style="margin-top:12px;">
-    <tr><th>模块</th><th>权重</th><th>得分</th><th>当前值</th><th>评判标准</th><th>来源</th><th>说明</th></tr>
+    <tr><th>模块</th><th>权重</th><th>暂定得分</th><th>当前值</th><th>评判标准</th><th>来源</th><th>证据状态</th><th>说明</th></tr>
     ${finalRowsHtml}
   </table>
   <div style="margin-top:12px;padding:10px 12px;background:#f0f5ff;border-radius:8px;font-size:12px;line-height:1.8;color:#555;">
-    <strong>口径说明：</strong>最终评判采用 150 分制：市场容量15、机会指数15、竞争结构25、评论壁垒15、新品活力30、毛利空间20、广告成本15、季节性/生命周期15。有效成本率因当前缺采购成本、头程、包装等数据，暂不参与评分，列为产品深化阶段补采项；广告成本优先取过滤后父体 Listing 销量前30样本的中位 CPC/客单价，当前没有引入转化率模型，因此按更保守阈值评分；评论壁垒按 Oalur Ratings × 8% 估算评论数；6个月纯新父体存活率只进入“新品活力”评分，不直接否决；季节性/生命周期拆成季节性风险6分、搜索需求生命周期9分；强季节性必须由 Google Trends、Oalur 站内搜索量、老品 ASIN 销售/BSR 趋势中至少两类证据确认，证据不足时只标记为疑似；搜索需求按长期/近期/当前递进分段，老品 ASIN 只作为验证信号，不计入最终评分。
+    <strong>口径说明：</strong>最终评判采用 150 分制：市场容量15、机会指数15、竞争结构25、评论壁垒15、新品活力30、毛利空间20、CPC/客单价压力代理15、季节性/生命周期15。缺失字段按中性暂定分进入当前总分，同时报告该模块理论最低/最高分和关键证据完整度；任何关键证据未闭环时，即使暂定分达到120，也只能进入高优先级补采，不能标记为“已验证进入”。有效成本率因当前缺采购成本、头程、包装等数据，暂不参与评分；CPC/客单价不是实际广告成本或 ACoS，CVR 5%/10%/15% 只作情景；评论壁垒按 Oalur Ratings × 8% 估算评论数，缺失 Ratings 不按零评论处理；6个月纯新父体存活率只进入“新品活力”评分，不直接否决；强季节性必须由 Google Trends、Oalur 站内搜索量、老品 ASIN 销售/BSR 趋势中至少两类证据确认。
   </div>
 </div>`;
 
@@ -3747,6 +3901,10 @@ logger.info('report.final_decision', {
   dataFile: path.relative(process.cwd(), resolvedDataPath),
   finalScore: finalDecision.totalScore,
   finalScoreMax: 150,
+  provisionalScore: finalDecision.totalScore,
+  scoreRange: { min: finalDecision.minScore, max: finalDecision.maxScore },
+  dataCompletenessPct: finalDecision.dataCompleteness,
+  missingReasons: finalDecision.missingReasons,
   finalLevel: finalDecision.finalLevel.text,
   vetoes: finalDecision.vetoes,
   productCount: data.length,
@@ -3758,6 +3916,10 @@ logger.info('report.final_decision', {
     module: row.module,
     weight: row.weight,
     score: row.score,
+    minScore: row.minScore,
+    maxScore: row.maxScore,
+    knownWeight: row.knownWeight,
+    evidenceStatus: row.evidenceStatus,
     current: row.current
   }))
 });
@@ -3765,6 +3927,8 @@ logger.end({
   status: 'completed',
   reportFile: path.relative(process.cwd(), outPath),
   finalScore: finalDecision.totalScore,
+  scoreRange: { min: finalDecision.minScore, max: finalDecision.maxScore },
+  dataCompletenessPct: finalDecision.dataCompleteness,
   finalLevel: finalDecision.finalLevel.text
 });
 console.log('报告已保存:', outPath);
@@ -3772,6 +3936,7 @@ console.log('\n=== 摘要 ===');
 console.log('关键词:', jsonData.keyword);
 console.log('目标类目:', targetCategoryDisplay);
 console.log('过滤后:', data.length, '条 | 排除:', excluded.length, '条');
+console.log('销量底线排除:', salesFloorExcludedCount, `条（<${salesFloorMinTarget}）`);
 console.log('月销量最低数:', salesMin.toLocaleString(), '|', salesFloorExpansionLevel);
 console.log('新品:', newProducts, '个 (' + newPct + '%)');
 console.log('结论:', conclusion, '-', reason);

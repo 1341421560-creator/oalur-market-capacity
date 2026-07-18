@@ -1,13 +1,18 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  buildInputProductContext,
+  mergeInputProductContexts,
+  primaryInputProductContext
+} = require('./input-product-context');
 
 const TARGET_CATEGORY_REVIEW_STANDARD = {
-  version: 1,
+  version: 2,
   triggerRule: 'Create a local Codex target-category review request for every scraped Amazon category, including manually provided reference categories when they match scraped rows.',
-  decisionRule: 'Local Codex must decide whether the input keyword core product belongs in each scraped Amazon category on the Amazon US marketplace.',
-  includeRule: 'Mark target only when the keyword core product type and core buying/usage intent naturally belong to that exact Amazon category.',
+  decisionRule: 'Local Codex must mark a category target when the scraped full path exactly matches an input reference category and the input keyword core product terms exactly match the category leaf; otherwise decide whether the input product context core product belongs in each scraped Amazon category on the Amazon US marketplace.',
+  includeRule: 'Exact full-path reference match plus exact keyword-to-leaf product-term match is a mandatory target decision. For all other categories, mark target only when the input product context core product type and core buying/usage intent naturally belong to that Amazon category.',
   excludeRule: 'Mark exclude when the category is a different product type, different function, or only matches generic words through parent-path terms.',
-  requiredContext: 'Local Codex must read the input keyword, manually provided reference categories, JS-scraped category paths, scoring evidence, and sample listing titles.',
+  requiredContext: 'Local Codex must read the input keyword, input title, input reference categories, input bullet points/description, JS-scraped category paths, scoring evidence, and sample listing titles/bullets. When the full path exactly matches an input reference category and the keyword core product terms exactly match the leaf, sample contamination, commercial or industrial listings, scoring evidence, and category share must not downgrade target to review or exclude.',
   outputSchema: {
     decisions: [
       {
@@ -53,6 +58,29 @@ function normalizeCategory(category) {
     .join(' > ');
 }
 
+function normalizeProductToken(token) {
+  const value = String(token || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (value.length > 4 && value.endsWith('ies')) return `${value.slice(0, -3)}y`;
+  if (value.length > 3 && value.endsWith('s') && !value.endsWith('ss')) return value.slice(0, -1);
+  return value;
+}
+
+function normalizedProductPhrase(value) {
+  return String(value || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(normalizeProductToken)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function keywordLeafExactMatch(category, keywords) {
+  const leaf = String(category || '').split('>').pop() || '';
+  const normalizedLeaf = normalizedProductPhrase(leaf);
+  const keywordList = Array.isArray(keywords) ? keywords : [keywords];
+  return Boolean(normalizedLeaf) && keywordList.some(keyword => normalizedProductPhrase(keyword) === normalizedLeaf);
+}
+
 function categoryMatchesReference(category, referenceCategory) {
   const categoryNorm = normalizeCategory(category);
   const referenceNorm = normalizeCategory(referenceCategory);
@@ -60,10 +88,6 @@ function categoryMatchesReference(category, referenceCategory) {
   return categoryNorm === referenceNorm ||
     categoryNorm.startsWith(`${referenceNorm} > `) ||
     referenceNorm.startsWith(`${categoryNorm} > `);
-}
-
-function matchesAnyReference(category, referenceCategories = []) {
-  return referenceCategories.some(referenceCategory => categoryMatchesReference(category, referenceCategory));
 }
 
 function normalizeDecision(value) {
@@ -104,6 +128,15 @@ function reviewedDecisionEntries(review) {
   });
 }
 
+function uniqueReviewedDecisionEntries(review) {
+  const byCategory = new Map();
+  for (const entry of reviewedDecisionEntries(review)) {
+    const key = normalizeCategory(entry.category);
+    if (key) byCategory.set(key, entry);
+  }
+  return [...byCategory.values()];
+}
+
 function categoryHasDecision(entry) {
   if (!entry || !entry.category) return false;
   const value = entry.decision || entry.status;
@@ -128,7 +161,7 @@ function reviewHasDecisionsForRequest(review, request) {
 
 function indexTargetCategoryReview(review) {
   const index = new Map();
-  for (const entry of reviewedDecisionEntries(review)) {
+  for (const entry of uniqueReviewedDecisionEntries(review)) {
     const key = normalizeCategory(entry.category);
     if (key) index.set(key, entry);
   }
@@ -169,6 +202,10 @@ function sampleProductsForCategory(items, category, limit = 8) {
       parentAsin: item.parentAsin || item.pasin || '',
       title: item.title || item.productTitle || item.productName || '',
       category: item.category || '',
+      categories: item.categories || [],
+      description: item.description || item.productDescription || '',
+      bulletPoints: item.bulletPoints || item.bullets || item.features || [],
+      images: item.images || item.imageUrls || item.mainImage || item.image || [],
       brand: item.brand || '',
       price: item.price || '',
       sales: item.sales || '',
@@ -189,8 +226,17 @@ function categoryRiskFlags(row) {
   return [...new Set(flags)];
 }
 
-function buildTargetCategoryCodexReviewRequest({ keywords, categorySelection, targetCategories, referenceCategories, items }) {
+function buildTargetCategoryCodexReviewRequest({ keywords, inputProductContext, inputProductContexts, categorySelection, targetCategories, referenceCategories, items }) {
   const keywordList = Array.isArray(keywords) ? keywords.filter(Boolean) : [keywords].filter(Boolean);
+  const contextList = mergeInputProductContexts([
+    ...(Array.isArray(inputProductContexts) ? inputProductContexts : []),
+    inputProductContext || buildInputProductContext({}, {
+      keyword: keywordList[0] || keywordList.join(' + '),
+      category: Array.isArray(referenceCategories) ? referenceCategories[0] : '',
+      categories: referenceCategories
+    })
+  ]);
+  const primaryContext = primaryInputProductContext(contextList);
   const rows = Array.isArray(categorySelection) ? categorySelection : [];
   const referenceReviewCategories = Array.isArray(referenceCategories)
     ? [...new Set(referenceCategories.map(category => String(category || '').trim()).filter(Boolean))]
@@ -223,13 +269,15 @@ function buildTargetCategoryCodexReviewRequest({ keywords, categorySelection, ta
     status: 'pending-local-codex-review',
     generatedAt: new Date().toISOString(),
     reviewStandard: TARGET_CATEGORY_REVIEW_STANDARD,
+    inputProductContext: primaryContext,
+    ...(contextList.length > 1 ? { inputProductContexts: contextList } : {}),
     keywords: keywordList,
     keyword: keywordList.join(' + '),
     targetCategoriesBeforeCodexReview: Array.isArray(targetCategories) ? targetCategories : [],
     referenceCategories: Array.isArray(referenceCategories) ? referenceCategories : [],
     referenceReviewCategories,
     referenceSemanticReviewCategories: [],
-    referenceCategoryPolicy: 'manual-reference-categories-participate-in-target-category-codex-review; if not judged target, matching listings may enter product-level semantic rescue review',
+    referenceCategoryPolicy: 'an exact scraped-full-path reference match combined with an exact keyword-to-leaf product-term match must be target; non-exact reference matches remain Codex context and may trigger product-level semantic rescue when judged non-target',
     reviewQuestion: TARGET_CATEGORY_REVIEW_STANDARD.decisionRule,
     categories: reviewRows.map(row => ({
       category: row.category,
@@ -250,6 +298,8 @@ function buildTargetCategoryCodexReviewRequest({ keywords, categorySelection, ta
       titleAnyRate: row.titleAnyRate,
       referenceCategoryMatch: Boolean(row.referenceCategoryMatch),
       referenceCategoryMatchType: row.referenceCategoryMatchType || '',
+      keywordLeafExactMatch: keywordLeafExactMatch(row.category, keywordList),
+      mandatoryTarget: row.referenceCategoryMatchType === 'exact' && keywordLeafExactMatch(row.category, keywordList),
       reason: row.reason || '',
       riskFlags: categoryRiskFlags(row),
       sampleProducts: sampleProductsForCategory(items, row.category)
@@ -257,9 +307,18 @@ function buildTargetCategoryCodexReviewRequest({ keywords, categorySelection, ta
   };
 }
 
+function requestFromExistingTargetCategoryReview(review, fallbackRequest = null) {
+  if (!review || !Array.isArray(review.categories)) return fallbackRequest;
+  const { decisions, ...request } = review;
+  return {
+    ...request,
+    categories: review.categories
+  };
+}
+
 function applyTargetCategoryCodexReview(categorySelectionResult, review) {
   const selection = categorySelectionResult || { targetCategories: [], categorySelection: [] };
-  const reviewedEntries = reviewedDecisionEntries(review || {});
+  const reviewedEntries = uniqueReviewedDecisionEntries(review || {});
   const index = new Map();
   for (const entry of reviewedEntries) {
     const key = normalizeCategory(entry.category);
@@ -307,7 +366,7 @@ function applyTargetCategoryCodexReview(categorySelectionResult, review) {
       missingFromScrapedRows: true
     }));
   const allRows = [...selectionRows, ...reviewedExtraRows];
-  const totalCategoryCount = allRows.length;
+  const totalCategoryCount = new Set(allRows.map(row => normalizeCategory(row.category)).filter(Boolean)).size;
   if (!index.size) {
     return {
       categorySelectionResult: selection,
@@ -371,6 +430,7 @@ function applyTargetCategoryCodexReview(categorySelectionResult, review) {
   const finalTargetSet = new Set(orderedTargets);
   const decisionCount = reviewedEntries.length;
   const reviewedCategoryCount = new Set(reviewedCategories.map(normalizeCategory).filter(Boolean)).size;
+  const complete = totalCategoryCount > 0 && reviewedCategoryCount >= totalCategoryCount;
 
   return {
     categorySelectionResult: {
@@ -383,11 +443,11 @@ function applyTargetCategoryCodexReview(categorySelectionResult, review) {
       }))
     },
     applied: true,
-    mode: 'codex-final',
+    mode: complete ? 'codex-final' : 'codex-provisional-pending-codex',
     decisionCount,
     reviewedCategoryCount,
     totalCategoryCount,
-    complete: totalCategoryCount > 0 && reviewedCategoryCount >= totalCategoryCount,
+    complete,
     excludedCategories: [...new Set(excludedCategories)],
     includedCategories: [...new Set(includedCategories)]
   };
@@ -396,23 +456,43 @@ function applyTargetCategoryCodexReview(categorySelectionResult, review) {
 function writeTargetCategoryCodexReviewRequest(dataFile, request, existingReview = null, reviewFileOverride = null) {
   const reviewFile = reviewFileOverride || resolveTargetCategoryReviewFile(dataFile, {});
   const current = existingReview || readJsonIfExists(reviewFile);
-  if (reviewHasDecisionsForRequest(current, request)) {
-    return { reviewFile, written: false, reason: 'existing review decisions preserved' };
-  }
   const payload = {
     ...request,
     decisions: Array.isArray(current?.decisions) ? current.decisions : []
   };
+  if (current && reviewHasDecisionsForRequest(current, request)) {
+    const comparablePayload = value => {
+      const clone = {
+        ...value,
+        decisions: Array.isArray(value?.decisions) ? value.decisions : []
+      };
+      delete clone.generatedAt;
+      return JSON.stringify(clone);
+    };
+    const currentComparable = comparablePayload(current);
+    const nextComparable = comparablePayload(payload);
+    if (currentComparable === nextComparable) {
+      return { reviewFile, written: false, reason: 'existing review decisions preserved' };
+    }
+  }
   fs.mkdirSync(path.dirname(reviewFile), { recursive: true });
   fs.writeFileSync(reviewFile, JSON.stringify(payload, null, 2), 'utf8');
-  return { reviewFile, written: true, reason: current ? 'pending review request refreshed' : 'pending review request created' };
+  return {
+    reviewFile,
+    written: true,
+    reason: current && reviewHasDecisionsForRequest(current, request)
+      ? 'review request context refreshed; existing decisions preserved'
+      : (current ? 'pending review request refreshed' : 'pending review request created')
+  };
 }
 
 module.exports = {
   TARGET_CATEGORY_REVIEW_STANDARD,
   applyTargetCategoryCodexReview,
   buildTargetCategoryCodexReviewRequest,
+  keywordLeafExactMatch,
   loadTargetCategoryCodexReview,
+  requestFromExistingTargetCategoryReview,
   targetCategoryReviewFileForDataFile,
   writeTargetCategoryCodexReviewRequest
 };

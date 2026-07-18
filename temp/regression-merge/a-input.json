@@ -1,9 +1,0 @@
-﻿{
-  "keyword": "fruit basket",
-  "data": [
-    { "asin": "A000000001", "title": "Fruit basket for kitchen counter", "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets", "price": "$19.99", "bsr": 100, "sales": "100", "revenue": "$1999", "ratings": "50" },
-    { "asin": "A000000002", "title": "Wire fruit basket", "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets", "price": "$21.99", "bsr": 120, "sales": "80", "revenue": "$1759", "ratings": "40" },
-    { "asin": "A000000003", "title": "Large fruit basket bowl", "category": "Home & Kitchen > Kitchen Storage > Fruit Baskets", "price": "$22.99", "bsr": 130, "sales": "70", "revenue": "$1609", "ratings": "35" }
-  ],
-  "excluded": []
-}

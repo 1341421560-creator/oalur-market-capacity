@@ -2,13 +2,29 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
 const { activatePage } = require('./browser-page-utils');
+const { refreshParentAggregatedMetrics } = require('./parent-listing-aggregate');
 
-const [, , lifecyclePath, marketDataPath, outputPathArg] = process.argv;
+const args = process.argv.slice(2);
+let lifecyclePath = null;
+let marketDataPath = null;
+let outputPathArg = null;
+let marketOnly = false;
 const CPC_SAMPLE_LIMIT = 30;
 const CPC_CONCURRENCY = Math.max(1, Math.min(8, Number(process.env.OALUR_CPC_CONCURRENCY || 4)));
 
-if (!lifecyclePath || !marketDataPath) {
+if (args[0] === '--market-only') {
+  marketOnly = true;
+  marketDataPath = args[1];
+  outputPathArg = args[2];
+} else {
+  lifecyclePath = args[0];
+  marketDataPath = args[1];
+  outputPathArg = args[2];
+}
+
+if (!marketDataPath || (!marketOnly && !lifecyclePath)) {
   console.error('Usage: node extract-cpc-opportunity.js <asin-lifecycle.json> <market-data.json> [output.json]');
+  console.error('   or: node extract-cpc-opportunity.js --market-only <market-data.json> [output.json]');
   process.exit(1);
 }
 
@@ -79,16 +95,17 @@ function selectAcosSample(marketData, fallbackAsins) {
     .filter(item => item.asin && item.sales > 0 && item.price != null && item.price > 0);
 
   const ratingUsable = candidates.filter(item => item.ratings > 0);
-  const priceValues = ratingUsable.map(item => item.price).sort((a, b) => a - b);
+  const sampleBase = ratingUsable.length ? ratingUsable : candidates;
+  const priceValues = sampleBase.map(item => item.price).sort((a, b) => a - b);
   const q1 = percentile(priceValues, 0.25);
   const q3 = percentile(priceValues, 0.75);
   const iqr = q1 != null && q3 != null ? q3 - q1 : 0;
   const lowerPrice = q1 == null ? 0 : Math.max(3, q1 - (1.5 * iqr));
   const upperPrice = q3 == null ? Number.POSITIVE_INFINITY : q3 + (1.5 * iqr || q3);
-  let valid = ratingUsable.filter(item => item.price >= lowerPrice && item.price <= upperPrice);
+  let valid = sampleBase.filter(item => item.price >= lowerPrice && item.price <= upperPrice);
 
-  if (valid.length < Math.min(10, ratingUsable.length)) {
-    valid = ratingUsable;
+  if (valid.length < Math.min(10, sampleBase.length)) {
+    valid = sampleBase;
   }
 
   const sample = valid
@@ -105,6 +122,7 @@ function selectAcosSample(marketData, fallbackAsins) {
         filteredParentCount: filteredParents.length,
         candidateCount: candidates.length,
         ratingUsableCount: ratingUsable.length,
+        sampleBaseCount: sampleBase.length,
         priceFilteredCount: valid.length,
         sampleCount: sample.length,
         priceFilter: {
@@ -116,7 +134,7 @@ function selectAcosSample(marketData, fallbackAsins) {
         rules: [
           'use filtered parent listings only',
           'exclude missing/zero price',
-          'exclude missing/zero Ratings',
+          ratingUsable.length ? 'exclude missing/zero Ratings' : 'ratings unavailable; keep listings with valid price and sales',
           'exclude price outliers by IQR',
           'sort by parent monthly sales descending',
           `take top ${CPC_SAMPLE_LIMIT}`
@@ -125,18 +143,35 @@ function selectAcosSample(marketData, fallbackAsins) {
     };
   }
 
+  if (fallbackAsins.length) {
+    return {
+      asins: fallbackAsins,
+      source: 'lifecycle-fallback',
+      selection: {
+        source: 'lifecycle ASIN fallback',
+        limit: fallbackAsins.length,
+        filteredParentCount: filteredParents.length,
+        candidateCount: candidates.length,
+        ratingUsableCount: ratingUsable.length,
+        priceFilteredCount: valid.length,
+        sampleCount: fallbackAsins.length,
+        rules: ['market data sample unavailable; fallback to lifecycle ASIN list']
+      }
+    };
+  }
+
   return {
-    asins: fallbackAsins,
-    source: 'lifecycle-fallback',
+    asins: [],
+    source: 'no-usable-market-sample',
     selection: {
-      source: 'lifecycle ASIN fallback',
-      limit: fallbackAsins.length,
+      source: 'no usable CPC sample',
+      limit: CPC_SAMPLE_LIMIT,
       filteredParentCount: filteredParents.length,
       candidateCount: candidates.length,
       ratingUsableCount: ratingUsable.length,
       priceFilteredCount: valid.length,
-      sampleCount: fallbackAsins.length,
-      rules: ['market data sample unavailable; fallback to lifecycle ASIN list']
+      sampleCount: 0,
+      rules: ['no filtered parent listings with valid ASIN, sales, and price; CPC extraction skipped without failing the batch']
     }
   };
 }
@@ -220,18 +255,46 @@ async function runPool(items, concurrency, worker) {
 }
 
 async function main() {
-  const lifecycle = readJson(lifecyclePath);
   const marketData = readJson(marketDataPath);
-  const fallbackAsins = lifecycle.asins || (lifecycle.products || []).map(item => item.asin).filter(Boolean);
+  marketData.data = refreshParentAggregatedMetrics(marketData.data || []);
+  marketData.excluded = refreshParentAggregatedMetrics(marketData.excluded || []);
+  const lifecycle = lifecyclePath ? readJson(lifecyclePath) : null;
+  const fallbackAsins = lifecycle
+    ? (lifecycle.asins || (lifecycle.products || []).map(item => item.asin).filter(Boolean))
+    : [];
   const sample = selectAcosSample(marketData, fallbackAsins);
   const asins = [...new Set(sample.asins || [])];
+  const outputPath = outputPathArg || path.join(path.dirname(lifecyclePath || marketDataPath), 'cpc-opportunity.json');
+
   if (!asins.length) {
-    throw new Error('未找到可用于 CPC 分析的 ASIN 样本');
+    const result = {
+      keyword: marketData.keyword || '',
+      analyzedAt: new Date().toISOString(),
+      lifecycleInput: lifecyclePath || null,
+      sampleSource: sample.source,
+      sampleSelection: sample.selection,
+      skipped: true,
+      skipReason: 'no usable ASIN sample for CPC analysis',
+      summary: {
+        asinCount: 0,
+        avgCpc: null,
+        avgCpcPriceRatioPct: null,
+        medianCpc: null,
+        medianCpcPriceRatioPct: null,
+        grade: '未分析',
+        conclusion: '无可用于 CPC 分析的 ASIN 样本'
+      },
+      products: []
+    };
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, JSON.stringify(result, null, 2), 'utf8');
+    console.log('CPC skipped: no usable ASIN sample');
+    console.log(`Saved: ${outputPath}`);
+    return;
   }
 
-  const outputPath = outputPathArg || path.join(path.dirname(lifecyclePath), 'cpc-opportunity.json');
-
   console.log(`CPC sample source: ${sample.source}, ASIN count: ${asins.length}`);
+  if (!lifecyclePath) console.log('CPC lifecycle input: not provided; using market data sample only');
   console.log(`CPC concurrency: ${CPC_CONCURRENCY} pages`);
   const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null, protocolTimeout: 600000 });
   const products = await runPool(asins, CPC_CONCURRENCY, async (asin) => {
@@ -269,6 +332,7 @@ async function main() {
   const result = {
     keyword: marketData.keyword || '',
     analyzedAt: new Date().toISOString(),
+    lifecycleInput: lifecyclePath || null,
     sampleSource: sample.source,
     sampleSelection: sample.selection,
     criteria: {
